@@ -463,7 +463,7 @@ void loop()
 
 
         Pushover::send(
-            "Irrigation ERROR",
+            "ZanzNuke ERROR",
             message
         );
 

@@ -301,7 +301,7 @@ void IrrigationManager::processState()
 
     /*
      * --------------------
-     * Fertilizer dosing
+     * Concentrate dosing
      * --------------------
      */
 
@@ -315,7 +315,7 @@ void IrrigationManager::processState()
 
 
             Serial.print(
-                "[Irrigation] Fertilizer complete, moving to "
+                "[Irrigation] Concentrate dosing complete, moving to "
             );
             Serial.println(
                 stateName(IrrigationState::FILLING_TANK)

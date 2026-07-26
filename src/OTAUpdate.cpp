@@ -8,11 +8,11 @@
  * Also doubles as the mDNS hostname: ArduinoOTA.begin() calls
  * MDNS.begin(hostname) internally (see ArduinoOTA.cpp), so
  * setting this is what makes the device reachable at
- * "zanzstop.local" on the LAN without needing to know its IP -
+ * "zanznuke.local" on the LAN without needing to know its IP -
  * no separate MDNS.begin() call needed (and calling it a second
  * time ourselves would just conflict with this one).
  */
-constexpr const char* MDNS_HOSTNAME = "zanzstop";
+constexpr const char* MDNS_HOSTNAME = "zanznuke";
 
 
 void OTAUpdate::begin()

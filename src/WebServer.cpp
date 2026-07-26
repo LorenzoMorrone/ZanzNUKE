@@ -276,9 +276,9 @@ static void handleRoot(AsyncWebServerRequest *request)
      */
 
     String html =
-        htmlHead("Irrigation");
+        htmlHead("ZanzNuke");
 
-    html += "<h1>Irrigation</h1>";
+    html += "<h1>ZanzNuke</h1>";
 
     html += R"rawliteral(
 <div class="card center">
@@ -446,7 +446,7 @@ static void handleApiClear(AsyncWebServerRequest *request)
 static void handleConfigPage(AsyncWebServerRequest *request)
 {
 
-    String html = htmlHead("Configuration");
+    String html = htmlHead("ZanzNuke - Configuration");
 
     html += "<h1>Configuration</h1>";
 
@@ -483,7 +483,7 @@ static void handleConfigPage(AsyncWebServerRequest *request)
     html += String(config.pulsesPerLiter, 1);
     html += "'>";
 
-    html += "</div><div class='card'><h3>Fertilizer</h3>";
+    html += "</div><div class='card'><h3>Concentrate</h3>";
 
     html += "<label>Pump seconds per liter of water</label>";
     html += "<input name='fert' type='number' inputmode='decimal' step='0.1' min='0' value='";
@@ -514,7 +514,7 @@ static void handleConfigPage(AsyncWebServerRequest *request)
 
     html += "<p class='hint'>Changing either of these restarts the device to reconnect. "
             "If it can't reach the new network, it falls back to broadcasting "
-            "<b>Irrigation-Setup</b> again.</p>";
+            "<b>ZanzNuke-Setup</b> again.</p>";
 
     html += "</div><div class='card'><h3>Pushover notifications</h3>";
 
@@ -750,13 +750,13 @@ static void handleConfigSave(AsyncWebServerRequest *request)
         Serial.println("), restarting to reconnect");
 
 
-        String html = htmlHead("Configuration");
+        String html = htmlHead("ZanzNuke - Configuration");
 
         html += "<h1>Configuration</h1>"
                 "<div class='card'>"
                 "<p class='ok' style='margin-top:0'>WiFi settings saved. Restarting to reconnect&hellip;</p>"
                 "<p class='hint'>Reconnect to your network in about a minute, or rejoin "
-                "<b>Irrigation-Setup</b> if it can't reach the new network.</p>"
+                "<b>ZanzNuke-Setup</b> if it can't reach the new network.</p>"
                 "</div>";
 
         html += htmlFoot();
@@ -799,7 +799,7 @@ static void handleConfigSave(AsyncWebServerRequest *request)
 static void handleSchedulePage(AsyncWebServerRequest *request)
 {
 
-    String html = htmlHead("Schedule");
+    String html = htmlHead("ZanzNuke - Schedule");
 
     html += "<h1>Weekly Schedule</h1>";
 
@@ -991,7 +991,7 @@ static const char* resetReasonToString(esp_reset_reason_t reason)
 static void handleDiagnostics(AsyncWebServerRequest *request)
 {
 
-    String html = htmlHead("Diagnostics");
+    String html = htmlHead("ZanzNuke - Diagnostics");
 
     html += "<h1>Diagnostics</h1>";
 
@@ -1206,7 +1206,7 @@ static void handleDiagnostics(AsyncWebServerRequest *request)
 static void handleTestPage(AsyncWebServerRequest *request)
 {
 
-    String html = htmlHead("Manual relay test");
+    String html = htmlHead("ZanzNuke - Manual Test");
 
     html += "<h1>Manual Test</h1>";
 
@@ -1234,7 +1234,7 @@ static void handleTestPage(AsyncWebServerRequest *request)
 
     html += "<button id='btnValve' class='btn-secondary' onclick=\"test('/relay/valve','btnValve')\">Test Valve</button>";
 
-    html += "<button id='btnFert' class='btn-secondary' onclick=\"test('/relay/fertilizer','btnFert')\">Test Fertilizer Pump</button>";
+    html += "<button id='btnFert' class='btn-secondary' onclick=\"test('/relay/fertilizer','btnFert')\">Test Concentrate Pump</button>";
 
     html += "<script>";
     html += "function test(url, id) {";

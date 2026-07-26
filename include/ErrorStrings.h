@@ -81,7 +81,7 @@ case IrrigationState::IDLE:
 return "Idle";
 
 case IrrigationState::DOSING_FERTILIZER:
-return "Dosing fertilizer";
+return "Dosing concentrate";
 
 case IrrigationState::FILLING_TANK:
 return isWash ? "Filling tank (wash)" : "Filling tank";

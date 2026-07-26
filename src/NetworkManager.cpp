@@ -48,7 +48,7 @@ uint32_t NetworkManager::lastReconnectAttemptMs = 0;
  *     reboot by design (see IrrigationManager / requirements), so
  *     this is a safe fallback, not a data-loss risk - and it also
  *     guarantees the device eventually falls back to broadcasting
- *     Irrigation-Setup if the saved network is gone for good,
+ *     ZanzNuke-Setup if the saved network is gone for good,
  *     rather than sitting disconnected forever.
  */
 
@@ -145,7 +145,7 @@ bool NetworkManager::connectSaved()
                 WiFi.localIP().toString()
             );
             Pushover::send(
-                "New internal IP address",
+                "ZanzNuke - New IP address",
                 WiFi.localIP().toString()
             );
             return true;
@@ -235,7 +235,7 @@ void NetworkManager::startAP()
 
     bool apStarted =
         WiFi.softAP(
-            "Irrigation-Setup"
+            "ZanzNuke-Setup"
         );
 
     apMode = true;
@@ -279,13 +279,13 @@ void NetworkManager::beginSetupServer()
         [](AsyncWebServerRequest *request)
         {
 
-            String html = htmlHead("WiFi Setup");
+            String html = htmlHead("ZanzNuke - WiFi Setup");
 
-            html += "<h1>WiFi Setup</h1>";
+            html += "<h1>ZanzNuke Setup</h1>";
 
             html += "<div class='card'>"
                     "<p class='hint' style='margin-top:0'>Connected to the "
-                    "<b>Irrigation-Setup</b> access point. Enter your home "
+                    "<b>ZanzNuke-Setup</b> access point. Enter your home "
                     "network's details below to connect the device to it.</p>"
                     "</div>";
 
@@ -326,9 +326,9 @@ void NetworkManager::beginSetupServer()
             )
             {
 
-                String html = htmlHead("WiFi Setup");
+                String html = htmlHead("ZanzNuke - WiFi Setup");
 
-                html += "<h1>WiFi Setup</h1>"
+                html += "<h1>ZanzNuke Setup</h1>"
                         "<div class='card'>"
                         "<p class='err' style='margin-top:0'>Please enter a network name.</p>"
                         "<a class='btn btn-secondary' href='/'>Back</a>"
@@ -362,13 +362,13 @@ void NetworkManager::beginSetupServer()
             config.save();
 
 
-            String html = htmlHead("WiFi Setup");
+            String html = htmlHead("ZanzNuke - WiFi Setup");
 
-            html += "<h1>WiFi Setup</h1>"
+            html += "<h1>ZanzNuke Setup</h1>"
                     "<div class='card'>"
                     "<p class='ok' style='margin-top:0'>Saved. Restarting&hellip;</p>"
                     "<p class='hint'>Reconnect to your normal network in about a minute, "
-                    "or rejoin <b>Irrigation-Setup</b> if it can't connect.</p>"
+                    "or rejoin <b>ZanzNuke-Setup</b> if it can't connect.</p>"
                     "</div>";
 
             html += htmlFoot();
