@@ -1,0 +1,469 @@
+#include <Arduino.h>
+
+#include "esp_task_wdt.h"
+#include "esp_idf_version.h"
+
+
+#include "Config.h"
+
+#include "Outputs.h"
+#include "Sensors.h"
+#include "FlowMeter.h"
+
+#include "RGBLed.h"
+
+#include "SafetyManager.h"
+#include "IrrigationManager.h"
+
+#include "NetworkManager.h"
+#include "WebServer.h"
+#include "Clock.h"
+
+#include "Scheduler.h"
+
+#include "Button.h"
+
+#include "Pushover.h"
+
+#include "OTAUpdate.h"
+
+#include "EventLog.h"
+
+#include "ErrorStrings.h"
+
+
+
+#define WATCHDOG_TIMEOUT 10
+
+
+
+ErrorCode lastReportedError =
+    ErrorCode::NONE;
+
+
+
+void setup()
+{
+
+    Serial.begin(115200);
+
+
+    delay(500);
+
+
+    Serial.println();
+    Serial.println(
+        "=== Irrigation Controller boot ==="
+    );
+
+
+
+    /*
+     * FIRST THING:
+     *
+     * Make sure nothing can start
+     */
+
+    Outputs::begin();
+
+    Outputs::stopAll();
+
+
+
+    /*
+     * Load saved configuration
+     */
+
+    config.load();
+
+
+
+    /*
+     * Hardware initialization
+     */
+
+    Sensors::begin();
+
+    FlowMeter::begin();
+
+    RGBLed::begin();
+
+    Button::begin();
+
+
+
+    /*
+     * Check impossible sensor state
+     */
+
+    if(
+        Sensors::tankFull()
+        &&
+        Sensors::tankEmpty()
+    )
+    {
+
+        Serial.println(
+            "Sensor fault detected"
+        );
+
+        RGBLed::set(
+            LedMode::RED
+        );
+
+    }
+
+
+
+    /*
+     * Network
+     */
+
+    NetworkManager::begin();
+
+
+    Clock::begin();
+
+
+    Pushover::begin();
+
+
+    /*
+     * The full dashboard/config/schedule web UI only starts once
+     * we're actually connected to a real network. While running
+     * as the setup access point, NetworkManager owns port 80
+     * itself with a minimal, dedicated WiFi setup page (see
+     * NetworkManager::beginSetupServer()) - keeping that flow
+     * completely isolated from the rest of the web UI is what
+     * makes it reliable through a phone's restrictive
+     * captive-portal mini browser.
+     */
+
+    if(!NetworkManager::isAPMode())
+    {
+        WebServerManager::begin();
+    }
+
+
+    OTAUpdate::begin();
+
+
+
+    /*
+     * Controllers
+     *
+     * IrrigationManager::begin() runs BEFORE SafetyManager::begin()
+     * on purpose: SafetyManager::begin() may immediately trip
+     * CONFIG_INVALID (via IrrigationManager::externalTrip()) if
+     * the loaded configuration is bad, and it must not be
+     * clobbered back to IDLE by a later IrrigationManager::begin().
+     */
+
+    Scheduler::begin();
+
+    IrrigationManager::begin();
+
+    SafetyManager::begin();
+
+
+
+    /*
+     * Watchdog
+     *
+     * esp_task_wdt_init()'s signature changed between
+     * arduino-esp32 2.x (ESP-IDF 4.x) and 3.x (ESP-IDF 5.x).
+     * platformio.ini doesn't pin the platform version, so
+     * support both.
+     */
+
+#if ESP_IDF_VERSION_MAJOR >= 5
+
+    esp_task_wdt_config_t wdtConfig = {
+        .timeout_ms = WATCHDOG_TIMEOUT * 1000,
+        .idle_core_mask = 0,
+        .trigger_panic = true
+    };
+
+    esp_err_t wdtInitResult =
+        esp_task_wdt_init(&wdtConfig);
+
+#else
+
+    esp_err_t wdtInitResult =
+        esp_task_wdt_init(
+            WATCHDOG_TIMEOUT,
+            true
+        );
+
+#endif
+
+
+    /*
+     * ESP_ERR_INVALID_STATE just means the framework already
+     * initialized the task watchdog before setup() ran, which is
+     * harmless. Anything else is worth surfacing: a watchdog that
+     * silently isn't covering the loop task would let a hang go
+     * unrecovered.
+     */
+
+    if(
+        wdtInitResult != ESP_OK
+        &&
+        wdtInitResult != ESP_ERR_INVALID_STATE
+    )
+    {
+        Serial.print(
+            "[Main] WARNING: watchdog init failed: "
+        );
+        Serial.println(
+            esp_err_to_name(wdtInitResult)
+        );
+    }
+
+
+    esp_err_t wdtAddResult =
+        esp_task_wdt_add(
+            NULL
+        );
+
+    if(wdtAddResult != ESP_OK)
+    {
+        Serial.print(
+            "[Main] WARNING: could not register loop task with watchdog: "
+        );
+        Serial.println(
+            esp_err_to_name(wdtAddResult)
+        );
+    }
+
+
+
+    EventLog::add(
+        "Boot completed"
+    );
+
+
+
+    RGBLed::set(
+        LedMode::GREEN
+    );
+
+
+    Serial.println(
+        "System ready"
+    );
+
+    Serial.println(
+        "[Main] Boot complete; monitoring started"
+    );
+
+}
+
+
+
+
+
+void loop()
+{
+
+    /*
+     * Feed watchdog
+     */
+
+    esp_task_wdt_reset();
+
+
+
+    /*
+     * Network services
+     */
+
+    NetworkManager::update();
+
+    OTAUpdate::update();
+
+
+
+    /*
+     * Automatic scheduler
+     */
+
+    Scheduler::update();
+
+
+
+    /*
+     * SAFETY FIRST
+     */
+
+    SafetyManager::update();
+
+
+
+    /*
+     * Main irrigation state machine
+     */
+
+    IrrigationManager::update();
+
+
+    /*
+     * Manual diagnostic relay tests requested from the web UI
+     */
+
+    WebServerManager::update();
+
+
+
+    /*
+     * Physical button
+     */
+
+    if(
+        Button::pressed()
+    )
+    {
+
+        Serial.println(
+            "[Main] Manual button pressed"
+        );
+
+
+        IrrigationManager::requestStart();
+
+
+        EventLog::add(
+            "Manual start"
+        );
+
+    }
+
+
+
+
+
+    /*
+     * LED status
+     */
+
+    if(
+        SafetyManager::hasError()
+    )
+    {
+
+        RGBLed::set(
+            LedMode::RED
+        );
+
+    }
+    else
+    {
+
+        switch(
+            IrrigationManager::state()
+        )
+        {
+
+
+        case IrrigationState::IDLE:
+
+            RGBLed::set(
+                LedMode::GREEN
+            );
+
+            break;
+
+
+
+        case IrrigationState::DOSING_FERTILIZER:
+
+        case IrrigationState::FILLING_TANK:
+
+        case IrrigationState::IRRIGATING:
+
+            RGBLed::set(
+                LedMode::BLUE
+            );
+
+            break;
+
+
+
+        default:
+
+            break;
+
+        }
+
+    }
+
+
+    RGBLed::update();
+
+
+
+
+
+    /*
+     * Send error notification once per error occurrence.
+     *
+     * lastReportedError must be reset back to NONE as soon as
+     * the fault clears - otherwise, after a clear + retrigger of
+     * the SAME error type, currentError == lastReportedError
+     * would still hold from the previous occurrence and the
+     * notification (and this Serial print) would silently never
+     * fire again, even though a brand new fault just happened.
+     */
+
+    ErrorCode currentError =
+        SafetyManager::error();
+
+
+    if(currentError == ErrorCode::NONE)
+    {
+
+        lastReportedError =
+            ErrorCode::NONE;
+
+    }
+    else if(
+        currentError != lastReportedError
+    )
+    {
+
+
+        lastReportedError =
+            currentError;
+
+
+
+        String message =
+            errorToString(
+                currentError
+            );
+
+
+
+        EventLog::add(
+            "ERROR: "
+            +
+            message
+        );
+
+
+
+        Pushover::send(
+            "Irrigation ERROR",
+            message
+        );
+
+
+        Serial.println(
+            message
+        );
+
+    }
+
+
+
+}
