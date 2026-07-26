@@ -6,6 +6,8 @@
 
 #include "Config.h"
 
+#include "Pins.h"
+
 #include "Outputs.h"
 #include "Sensors.h"
 #include "FlowMeter.h"
@@ -35,6 +37,20 @@
 
 ErrorCode lastReportedError =
     ErrorCode::NONE;
+
+
+/*
+ * Two independent physical buttons, each with its own
+ * debounce/edge-detection state (see Button.h):
+ *   - startButton on PIN_BUTTON: same as before, requests an
+ *     irrigation cycle.
+ *   - resetButton on PIN_FAULT_RESET: hardware equivalent of the
+ *     web UI's "Clear Error" button.
+ */
+
+Button startButton(PIN_BUTTON);
+
+Button resetButton(PIN_FAULT_RESET);
 
 
 
@@ -84,7 +100,9 @@ void setup()
 
     RGBLed::begin();
 
-    Button::begin();
+    startButton.begin();
+
+    resetButton.begin();
 
 
 
@@ -326,16 +344,16 @@ void loop()
 
 
     /*
-     * Physical button
+     * Physical buttons
      */
 
     if(
-        Button::pressed()
+        startButton.pressed()
     )
     {
 
         Serial.println(
-            "[Main] Manual button pressed"
+            "[Main] Manual start button pressed"
         );
 
 
@@ -344,6 +362,26 @@ void loop()
 
         EventLog::add(
             "Manual start"
+        );
+
+    }
+
+
+    if(
+        resetButton.pressed()
+    )
+    {
+
+        Serial.println(
+            "[Main] Fault reset button pressed"
+        );
+
+
+        SafetyManager::requestClear();
+
+
+        EventLog::add(
+            "Manual fault reset"
         );
 
     }

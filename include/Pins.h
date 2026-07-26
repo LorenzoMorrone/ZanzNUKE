@@ -18,6 +18,10 @@ constexpr uint8_t PIN_FLOAT_EMPTY = 5;
 
 constexpr uint8_t PIN_FLOW        = 6;
 
+// User-facing fault reset button
+constexpr uint8_t PIN_FAULT_RESET = 7;
+
+// Start button (user-facing)
 constexpr uint8_t PIN_BUTTON      = 8;
 
 // RGB LED

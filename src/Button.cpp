@@ -1,19 +1,19 @@
 #include "Button.h"
 
-#include "Pins.h"
-
-
 
 constexpr uint32_t DEBOUNCE_MS = 50;
 
 
-uint32_t Button::lastChangeMs = 0;
-
-bool Button::debouncedState = false;
-
-bool Button::rawStateLast = false;
-
-bool Button::latched = false;
+Button::Button(
+    uint8_t pin
+)
+    : pin(pin),
+      lastChangeMs(0),
+      debouncedState(false),
+      rawStateLast(false),
+      latched(false)
+{
+}
 
 
 
@@ -21,12 +21,12 @@ void Button::begin()
 {
 
     pinMode(
-        PIN_BUTTON,
+        pin,
         INPUT_PULLUP
     );
 
     rawStateLast =
-        (digitalRead(PIN_BUTTON) == LOW);
+        (digitalRead(pin) == LOW);
 
     debouncedState =
         rawStateLast;
@@ -39,7 +39,7 @@ bool Button::pressed()
 {
 
     bool raw =
-        (digitalRead(PIN_BUTTON) == LOW);
+        (digitalRead(pin) == LOW);
 
 
     if(raw != rawStateLast)
