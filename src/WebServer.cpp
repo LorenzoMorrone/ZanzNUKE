@@ -525,7 +525,78 @@ static void handleConfigPage(AsyncWebServerRequest *request)
     html += config.pushoverUser;
     html += "'>";
 
-    html += "</div><button>Save</button></form>";
+    html += "</div>";
+
+
+    /*
+     * Advanced: previously-hardcoded tuning constants, now
+     * adjustable without a firmware reflash. Tucked behind a
+     * <details> disclosure at the bottom so the common settings
+     * above stay the focus for day-to-day use.
+     */
+
+    html += "<details><summary>Advanced settings</summary>";
+
+    html += "<div class='card'><h3>Leak &amp; Flow Detection</h3>";
+
+    html += "<label>No-flow stall timeout while filling (seconds)</label>";
+    html += "<input name='flow_stall' type='number' inputmode='numeric' step='1' min='1' value='";
+    html += String(config.flowStallTimeoutSeconds);
+    html += "'>";
+
+    html += "<label>Leak detection pulse tolerance</label>";
+    html += "<input name='leak_tol' type='number' inputmode='numeric' step='1' min='0' value='";
+    html += String(config.flowLeakTolerancePulses);
+    html += "'>";
+
+    html += "<label>Leak detection grace period after valve closes (seconds)</label>";
+    html += "<input name='leak_grace' type='number' inputmode='numeric' step='1' min='0' value='";
+    html += String(config.flowLeakGraceSeconds);
+    html += "'>";
+
+    html += "<label>Leak detection stray-pulse window (seconds)</label>";
+    html += "<input name='leak_rebase' type='number' inputmode='numeric' step='1' min='1' value='";
+    html += String(config.flowLeakRebaselineSeconds);
+    html += "'>";
+
+    html += "<p class='hint'>Controls how sensitive leak/stuck-valve detection is. Lower "
+            "tolerance/grace = stricter (more false alarms from residual flow after the "
+            "valve closes); higher = more lenient (slower to catch a genuine leak).</p>";
+
+    html += "</div>";
+
+
+    html += "<div class='card'><h3>Network</h3>";
+
+    html += "<label>WiFi reconnect retry interval (seconds)</label>";
+    html += "<input name='wifi_reconnect' type='number' inputmode='numeric' step='1' min='5' value='";
+    html += String(config.wifiReconnectIntervalSeconds);
+    html += "'>";
+
+    html += "<label>Restart device after WiFi down for (minutes)</label>";
+    html += "<input name='wifi_giveup' type='number' inputmode='numeric' step='1' min='1' value='";
+    html += String(config.wifiGiveUpRestartMinutes);
+    html += "'>";
+
+    html += "</div>";
+
+
+    html += "<div class='card'><h3>System</h3>";
+
+    html += "<label>Watchdog timeout (seconds)</label>";
+    html += "<input name='wdt_timeout' type='number' inputmode='numeric' step='1' min='5' max='120' value='";
+    html += String(config.watchdogTimeoutSeconds);
+    html += "'>";
+
+    html += "<p class='hint'>Reboots the device if the main loop ever hangs for longer "
+            "than this. Takes effect after the device restarts, not immediately.</p>";
+
+    html += "</div>";
+
+    html += "</details>";
+
+
+    html += "<button>Save</button></form>";
 
     html += htmlFoot("config");
 
@@ -570,6 +641,41 @@ static void handleConfigSave(AsyncWebServerRequest *request)
     if(request->hasParam("irrigation_timeout"))
         config.irrigationTimeoutSeconds =
             (uint32_t)clampf(request->getParam("irrigation_timeout")->value().toFloat(), 10.0f, 86400.0f);
+
+
+    /*
+     * Advanced section - see handleConfigPage() for the field
+     * descriptions.
+     */
+
+    if(request->hasParam("flow_stall"))
+        config.flowStallTimeoutSeconds =
+            (uint32_t)clampf(request->getParam("flow_stall")->value().toFloat(), 1.0f, 300.0f);
+
+    if(request->hasParam("leak_tol"))
+        config.flowLeakTolerancePulses =
+            (uint32_t)clampf(request->getParam("leak_tol")->value().toFloat(), 0.0f, 10000.0f);
+
+    if(request->hasParam("leak_grace"))
+        config.flowLeakGraceSeconds =
+            (uint32_t)clampf(request->getParam("leak_grace")->value().toFloat(), 0.0f, 60.0f);
+
+    if(request->hasParam("leak_rebase"))
+        config.flowLeakRebaselineSeconds =
+            (uint32_t)clampf(request->getParam("leak_rebase")->value().toFloat(), 1.0f, 3600.0f);
+
+    if(request->hasParam("wifi_reconnect"))
+        config.wifiReconnectIntervalSeconds =
+            (uint32_t)clampf(request->getParam("wifi_reconnect")->value().toFloat(), 5.0f, 300.0f);
+
+    if(request->hasParam("wifi_giveup"))
+        config.wifiGiveUpRestartMinutes =
+            (uint32_t)clampf(request->getParam("wifi_giveup")->value().toFloat(), 1.0f, 60.0f);
+
+    if(request->hasParam("wdt_timeout"))
+        config.watchdogTimeoutSeconds =
+            (uint32_t)clampf(request->getParam("wdt_timeout")->value().toFloat(), 5.0f, 120.0f);
+
 
     if(request->hasParam("pushover_token"))
         config.pushoverToken = request->getParam("pushover_token")->value();

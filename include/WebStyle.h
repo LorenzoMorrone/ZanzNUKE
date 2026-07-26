@@ -64,6 +64,16 @@ input[type=text],input[type=number],input[type=password],input[type=time],select
 input:not([type=checkbox]),select{width:100%}
 input[type=checkbox]{width:20px; height:20px; accent-color:var(--primary)}
 input[type=range]{width:100%; accent-color:var(--primary); padding:0; margin-top:4px}
+details{margin:0 0 16px}
+details summary{
+  cursor:pointer; font-size:13px; font-weight:700; color:var(--muted); padding:14px 18px;
+  background:var(--card); border:1px solid var(--border); border-radius:var(--radius);
+  list-style:none; text-transform:uppercase; letter-spacing:.05em;
+}
+details summary::-webkit-details-marker{display:none}
+details summary::after{content:'\25BE'; float:right; text-transform:none; letter-spacing:0}
+details[open] summary::after{content:'\25B4'}
+details .card{margin-top:16px}
 input:focus,select:focus{outline:2px solid var(--primary); outline-offset:1px}
 button{
   display:block; width:100%; padding:15px; margin:10px 0 0; font-size:16px; font-weight:600;

@@ -27,28 +27,30 @@ uint32_t NetworkManager::lastReconnectAttemptMs = 0;
 
 
 /*
- * How often to actively retry a lost STA connection, rather than
- * relying solely on the arduino-esp32 core's implicit
- * auto-reconnect - which isn't guaranteed to kick in after every
- * kind of disconnect (e.g. one following a failed TLS handshake
- * can leave the WiFi/TCP stack in a state it doesn't cleanly
- * recover from on its own).
+ * How often to actively retry a lost STA connection, and how
+ * long to keep retrying before giving up and rebooting, both
+ * come from config (see Config.h's "Advanced: WiFi resilience
+ * tuning" fields and the config page's Advanced section):
+ *
+ *   config.wifiReconnectIntervalSeconds - retry WiFi.reconnect()
+ *     this often rather than relying solely on the arduino-esp32
+ *     core's implicit auto-reconnect, which isn't guaranteed to
+ *     kick in after every kind of disconnect (e.g. one following
+ *     a failed TLS handshake can leave the WiFi/TCP stack in a
+ *     state it doesn't cleanly recover from on its own).
+ *
+ *   config.wifiGiveUpRestartMinutes - if retrying hasn't worked
+ *     for this long, stop trying to be clever and just reboot. A
+ *     full restart resets the radio, TCP stack and heap
+ *     unconditionally, which is a strictly stronger recovery than
+ *     anything reconnect() can do from inside a possibly-wedged
+ *     WiFi driver state. Irrigation state is not preserved across
+ *     reboot by design (see IrrigationManager / requirements), so
+ *     this is a safe fallback, not a data-loss risk - and it also
+ *     guarantees the device eventually falls back to broadcasting
+ *     Irrigation-Setup if the saved network is gone for good,
+ *     rather than sitting disconnected forever.
  */
-constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 15000;
-
-/*
- * If retrying hasn't worked for this long, stop trying to be
- * clever and just reboot. A full restart resets the radio, TCP
- * stack and heap unconditionally, which is a strictly stronger
- * recovery than anything reconnect() can do from inside a
- * possibly-wedged WiFi driver state. Irrigation state is not
- * preserved across reboot by design (see IrrigationManager /
- * requirements), so this is a safe fallback, not a data-loss
- * risk - and it also guarantees the device eventually falls back
- * to broadcasting Irrigation-Setup if the saved network is gone
- * for good, rather than sitting disconnected forever.
- */
-constexpr uint32_t WIFI_GIVE_UP_AND_RESTART_MS = 3UL * 60UL * 1000UL;
 
 
 
@@ -474,7 +476,7 @@ void NetworkManager::update()
         if(
             now - disconnectedSinceMs
             >
-            WIFI_GIVE_UP_AND_RESTART_MS
+            config.wifiGiveUpRestartMinutes * 60UL * 1000UL
         )
         {
 
@@ -492,7 +494,7 @@ void NetworkManager::update()
         if(
             now - lastReconnectAttemptMs
             >
-            WIFI_RECONNECT_INTERVAL_MS
+            config.wifiReconnectIntervalSeconds * 1000UL
         )
         {
 

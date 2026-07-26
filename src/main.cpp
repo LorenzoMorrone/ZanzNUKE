@@ -33,10 +33,6 @@
 
 
 
-#define WATCHDOG_TIMEOUT 10
-
-
-
 ErrorCode lastReportedError =
     ErrorCode::NONE;
 
@@ -174,12 +170,26 @@ void setup()
      * arduino-esp32 2.x (ESP-IDF 4.x) and 3.x (ESP-IDF 5.x).
      * platformio.ini doesn't pin the platform version, so
      * support both.
+     *
+     * Timeout comes from config (Advanced section of the config
+     * page) rather than a fixed constant, clamped defensively:
+     * too low risks a reboot loop during a
+     * legitimately slow operation (flash write, TLS handshake),
+     * too high defeats the point of having a watchdog at all.
+     * Only takes effect after a restart, since this only runs
+     * once in setup().
      */
+
+    uint32_t watchdogSeconds =
+        config.watchdogTimeoutSeconds;
+
+    if(watchdogSeconds < 5) watchdogSeconds = 5;
+    if(watchdogSeconds > 120) watchdogSeconds = 120;
 
 #if ESP_IDF_VERSION_MAJOR >= 5
 
     esp_task_wdt_config_t wdtConfig = {
-        .timeout_ms = WATCHDOG_TIMEOUT * 1000,
+        .timeout_ms = watchdogSeconds * 1000,
         .idle_core_mask = 0,
         .trigger_panic = true
     };
@@ -191,7 +201,7 @@ void setup()
 
     esp_err_t wdtInitResult =
         esp_task_wdt_init(
-            WATCHDOG_TIMEOUT,
+            watchdogSeconds,
             true
         );
 

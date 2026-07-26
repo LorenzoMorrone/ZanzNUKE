@@ -42,6 +42,41 @@ struct IrrigationConfig
 
 
     /*
+     * Advanced: flow/leak detection tuning (SafetyManager).
+     * Previously hardcoded constants - exposed here since they
+     * directly control how sensitive leak/stuck-valve detection
+     * is, which is exactly the kind of thing worth tuning without
+     * a firmware reflash.
+     */
+
+    uint32_t flowStallTimeoutSeconds = 15;
+
+    uint32_t flowLeakTolerancePulses = 30;
+
+    uint32_t flowLeakGraceSeconds = 4;
+
+    uint32_t flowLeakRebaselineSeconds = 60;
+
+
+    /*
+     * Advanced: WiFi resilience tuning (NetworkManager).
+     */
+
+    uint32_t wifiReconnectIntervalSeconds = 15;
+
+    uint32_t wifiGiveUpRestartMinutes = 3;
+
+
+    /*
+     * Advanced: system watchdog (main.cpp). Only takes effect
+     * after a restart - the watchdog is initialized once in
+     * setup() and can't be reconfigured while running.
+     */
+
+    uint32_t watchdogTimeoutSeconds = 10;
+
+
+    /*
      * WiFi
      */
 

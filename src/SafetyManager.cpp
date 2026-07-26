@@ -10,37 +10,17 @@
 
 
 /*
- * Tolerance for pulses seen while the valve is supposed to be
- * shut, once the settling grace period (below) has passed.
- * Cheap flow sensors can register the odd spurious pulse from
- * electrical noise or vibration; this - combined with the
- * periodic re-baseline below - absorbs that without needing a
- * real leak to explain every single pulse.
+ * Flow/leak detection tuning below all comes from config (see
+ * Config.h's "Advanced: flow/leak detection tuning" fields and
+ * the config page's Advanced section) rather than being fixed
+ * at compile time, since these directly control how sensitive
+ * leak/stuck-valve detection is:
+ *
+ *   config.flowLeakTolerancePulses      - see FLOW_CLOSED_TOLERANCE_PULSES's old doc
+ *   config.flowLeakGraceSeconds         - see FLOW_CLOSED_GRACE_MS's old doc
+ *   config.flowLeakRebaselineSeconds    - see FLOW_CLOSED_REBASELINE_MS's old doc
+ *   config.flowStallTimeoutSeconds      - see FLOW_STALL_TIMEOUT_MS's old doc
  */
-constexpr uint32_t FLOW_CLOSED_TOLERANCE_PULSES = 30;
-
-/*
- * After the valve closes, residual line pressure/momentum can
- * keep the flow meter spinning for a couple of seconds. Pulses
- * during this window are expected and never counted against the
- * tolerance above.
- */
-constexpr uint32_t FLOW_CLOSED_GRACE_MS = 4000;
-
-/*
- * While comfortably under the tolerance, slide the baseline
- * forward periodically so isolated stray pulses spread out over
- * a long idle period can't slowly add up to a false trigger.
- * Only pulses arriving faster than this window - i.e. an actual
- * sustained leak - can ever cross the tolerance.
- */
-constexpr uint32_t FLOW_CLOSED_REBASELINE_MS = 60000;
-
-/*
- * How long a flow stall (no new pulses) is tolerated while the
- * valve is deliberately open before we call it NO_FLOW.
- */
-constexpr uint32_t FLOW_STALL_TIMEOUT_MS = 15000;
 
 
 static const char* errorName(ErrorCode error)
@@ -249,8 +229,8 @@ void SafetyManager::update()
      * Flow sensor stall check
      *
      * Valve is deliberately open (filling or washing) but no
-     * pulses have been seen for FLOW_STALL_TIMEOUT_MS: the
-     * mains supply may be off, the valve may have failed to
+     * pulses have been seen for config.flowStallTimeoutSeconds:
+     * the mains supply may be off, the valve may have failed to
      * open, or the flow sensor may be dead/miswired.
      */
 
@@ -284,7 +264,7 @@ void SafetyManager::update()
             -
             lastFlowChange
             >
-            FLOW_STALL_TIMEOUT_MS
+            config.flowStallTimeoutSeconds * 1000UL
         )
         {
 
@@ -328,7 +308,7 @@ void SafetyManager::update()
         if(
             now - flowClosedBaselineAt
             <
-            FLOW_CLOSED_GRACE_MS
+            config.flowLeakGraceSeconds * 1000UL
         )
         {
 
@@ -353,7 +333,7 @@ void SafetyManager::update()
             if(
                 pulses - flowClosedBaseline
                 >
-                FLOW_CLOSED_TOLERANCE_PULSES
+                config.flowLeakTolerancePulses
             )
             {
 
@@ -373,7 +353,7 @@ void SafetyManager::update()
             if(
                 now - flowClosedBaselineAt
                 >
-                FLOW_CLOSED_REBASELINE_MS
+                config.flowLeakRebaselineSeconds * 1000UL
             )
             {
 

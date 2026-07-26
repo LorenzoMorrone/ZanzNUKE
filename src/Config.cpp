@@ -62,6 +62,55 @@ bool IrrigationConfig::load()
         );
 
 
+    flowStallTimeoutSeconds =
+        preferences.getUInt(
+            "flowstall",
+            15
+        );
+
+
+    flowLeakTolerancePulses =
+        preferences.getUInt(
+            "leaktol",
+            30
+        );
+
+
+    flowLeakGraceSeconds =
+        preferences.getUInt(
+            "leakgrace",
+            4
+        );
+
+
+    flowLeakRebaselineSeconds =
+        preferences.getUInt(
+            "leakrebase",
+            60
+        );
+
+
+    wifiReconnectIntervalSeconds =
+        preferences.getUInt(
+            "wifirecon",
+            15
+        );
+
+
+    wifiGiveUpRestartMinutes =
+        preferences.getUInt(
+            "wifigiveup",
+            3
+        );
+
+
+    watchdogTimeoutSeconds =
+        preferences.getUInt(
+            "wdttimeout",
+            10
+        );
+
+
     wifiSSID =
         preferences.getString(
             "ssid",
@@ -135,6 +184,44 @@ bool IrrigationConfig::load()
         repaired = true;
     }
 
+
+    /*
+     * A zero here (blank/corrupted NVS entry) would mean an
+     * instantly-expiring watchdog (boot-loop) or a leak-detection
+     * window of zero (perpetually latching false leaks) - repair
+     * the same way as the float fields above.
+     */
+
+    if(watchdogTimeoutSeconds == 0)
+    {
+        watchdogTimeoutSeconds = 10;
+        repaired = true;
+    }
+
+    if(flowStallTimeoutSeconds == 0)
+    {
+        flowStallTimeoutSeconds = 15;
+        repaired = true;
+    }
+
+    if(flowLeakRebaselineSeconds == 0)
+    {
+        flowLeakRebaselineSeconds = 60;
+        repaired = true;
+    }
+
+    if(wifiReconnectIntervalSeconds == 0)
+    {
+        wifiReconnectIntervalSeconds = 15;
+        repaired = true;
+    }
+
+    if(wifiGiveUpRestartMinutes == 0)
+    {
+        wifiGiveUpRestartMinutes = 3;
+        repaired = true;
+    }
+
     if(repaired)
     {
 
@@ -194,6 +281,48 @@ bool IrrigationConfig::save()
     preferences.putUInt(
         "irrigto",
         irrigationTimeoutSeconds
+    );
+
+
+    preferences.putUInt(
+        "flowstall",
+        flowStallTimeoutSeconds
+    );
+
+
+    preferences.putUInt(
+        "leaktol",
+        flowLeakTolerancePulses
+    );
+
+
+    preferences.putUInt(
+        "leakgrace",
+        flowLeakGraceSeconds
+    );
+
+
+    preferences.putUInt(
+        "leakrebase",
+        flowLeakRebaselineSeconds
+    );
+
+
+    preferences.putUInt(
+        "wifirecon",
+        wifiReconnectIntervalSeconds
+    );
+
+
+    preferences.putUInt(
+        "wifigiveup",
+        wifiGiveUpRestartMinutes
+    );
+
+
+    preferences.putUInt(
+        "wdttimeout",
+        watchdogTimeoutSeconds
     );
 
 
