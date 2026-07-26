@@ -4,6 +4,8 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 
+#include <esp_system.h>
+
 #include "IrrigationManager.h"
 #include "SafetyManager.h"
 #include "Outputs.h"
@@ -15,6 +17,7 @@
 #include "NetworkManager.h"
 #include "ErrorStrings.h"
 #include "WebStyle.h"
+#include "EventLog.h"
 
 
 AsyncWebServer server(80);
@@ -966,6 +969,25 @@ static void handleScheduleSave(AsyncWebServerRequest *request)
  * ---------------------------------------------------------
  */
 
+static const char* resetReasonToString(esp_reset_reason_t reason)
+{
+    switch(reason)
+    {
+    case ESP_RST_POWERON:   return "Power-on";
+    case ESP_RST_EXT:       return "External pin reset";
+    case ESP_RST_SW:        return "Software (ESP.restart())";
+    case ESP_RST_PANIC:     return "PANIC / exception";
+    case ESP_RST_INT_WDT:   return "Interrupt watchdog";
+    case ESP_RST_TASK_WDT:  return "Task watchdog (loop() hung)";
+    case ESP_RST_WDT:       return "Other watchdog";
+    case ESP_RST_DEEPSLEEP: return "Woke from deep sleep";
+    case ESP_RST_BROWNOUT:  return "Brownout (power supply sag)";
+    case ESP_RST_SDIO:      return "SDIO";
+    default:                return "Unknown";
+    }
+}
+
+
 static void handleDiagnostics(AsyncWebServerRequest *request)
 {
 
@@ -1030,6 +1052,147 @@ static void handleDiagnostics(AsyncWebServerRequest *request)
     html += "</span></div>";
 
     html += "</div></div>";
+
+
+    /*
+     * Advanced / debug: raw sensor states and internal safety-
+     * loop timing, tucked behind a disclosure since it's rarely
+     * needed but is exactly what's useful to have on hand after
+     * an unexpected trigger or a report of "it crashed" - so the
+     * next investigation starts from real numbers instead of
+     * guessing what the device was seeing at the time.
+     */
+
+    html += "<details><summary>Advanced / Debug</summary>";
+
+
+    html += "<div class='card'><h3>Raw Sensors</h3><div class='stat-grid'>";
+
+    html += "<div><span class='stat-label'>Top float (full)</span><span class='stat-value ";
+    html += (Sensors::tankFull() ? "err" : "ok");
+    html += "'>";
+    html += (Sensors::tankFull() ? "CLOSED" : "open");
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Bottom float (empty)</span><span class='stat-value ";
+    html += (Sensors::tankEmpty() ? "err" : "ok");
+    html += "'>";
+    html += (Sensors::tankEmpty() ? "OPEN (empty)" : "closed (water present)");
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Flow pulses (raw)</span><span class='stat-value'>";
+    html += String(FlowMeter::pulses());
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Computed liters</span><span class='stat-value'>";
+    html += String(
+        (config.pulsesPerLiter > 0.0f)
+        ? (FlowMeter::pulses() / config.pulsesPerLiter)
+        : 0.0f,
+        2
+    );
+    html += "</span></div>";
+
+    html += "</div></div>";
+
+
+    html += "<div class='card'><h3>Safety Loop Internals</h3><div class='stat-grid'>";
+
+    html += "<div><span class='stat-label'>Manual flow override</span><span class='stat-value'>";
+    html += (SafetyManager::isManualFlowAllowed() ? "ACTIVE" : "off");
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Flow baseline age</span><span class='stat-value'>";
+    html += String(SafetyManager::flowClosedBaselineAgeMs() / 1000);
+    html += " s</span></div>";
+
+    html += "<div><span class='stat-label'>Last flow change</span><span class='stat-value'>";
+    html += String(SafetyManager::lastFlowChangeAgeMs() / 1000);
+    html += " s ago</span></div>";
+
+    html += "<div><span class='stat-label'>Last flow count seen</span><span class='stat-value'>";
+    html += String(SafetyManager::lastFlowPulseCount());
+    html += "</span></div>";
+
+    html += "</div></div>";
+
+
+    html += "<div class='card'><h3>Irrigation Internals</h3><div class='stat-grid'>";
+
+    html += "<div><span class='stat-label'>State elapsed</span><span class='stat-value'>";
+    html += String(IrrigationManager::stateElapsedMs() / 1000);
+    html += " s</span></div>";
+
+    html += "<div><span class='stat-label'>Target liters</span><span class='stat-value'>";
+    html += String(IrrigationManager::targetLitersValue(), 2);
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Wash cycle</span><span class='stat-value'>";
+    html += (IrrigationManager::isWashCycle() ? "yes" : "no");
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Clock synced</span><span class='stat-value'>";
+    html += (Clock::valid() ? "yes" : "no");
+    html += "</span></div>";
+
+    html += "<div style='grid-column:1/-1'><span class='stat-label'>Next scheduled run</span><span class='stat-value'>";
+    html += Scheduler::nextRunDescription();
+    html += "</span></div>";
+
+    html += "</div></div>";
+
+
+    html += "<div class='card'><h3>System / Crash Info</h3><div class='stat-grid'>";
+
+    html += "<div style='grid-column:1/-1'><span class='stat-label'>Last reset reason</span><span class='stat-value'>";
+    html += resetReasonToString(esp_reset_reason());
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Chip</span><span class='stat-value'>";
+    html += ESP.getChipModel();
+    html += " rev ";
+    html += String(ESP.getChipRevision());
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Flash size</span><span class='stat-value'>";
+    html += String(ESP.getFlashChipSize() / 1024 / 1024);
+    html += " MB</span></div>";
+
+    html += "<div><span class='stat-label'>Min free heap ever</span><span class='stat-value'>";
+    html += String(ESP.getMinFreeHeap());
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Max alloc block</span><span class='stat-value'>";
+    html += String(ESP.getMaxAllocHeap());
+    html += "</span></div>";
+
+    html += "<div><span class='stat-label'>Sketch size</span><span class='stat-value'>";
+    html += String(ESP.getSketchSize() / 1024);
+    html += " KB</span></div>";
+
+    html += "<div><span class='stat-label'>Free sketch space</span><span class='stat-value'>";
+    html += String(ESP.getFreeSketchSpace() / 1024);
+    html += " KB</span></div>";
+
+    html += "<div style='grid-column:1/-1'><span class='stat-label'>MAC address</span><span class='stat-value'>";
+    html += WiFi.macAddress();
+    html += "</span></div>";
+
+    html += "</div></div>";
+
+
+    html += "<div class='card'><h3>Event Log</h3>";
+    html += "<pre>";
+
+    String eventLog = EventLog::get();
+
+    html += (eventLog.length() > 0) ? eventLog : "(empty)";
+
+    html += "</pre></div>";
+
+
+    html += "</details>";
+
 
     html += htmlFoot("diagnostics");
 

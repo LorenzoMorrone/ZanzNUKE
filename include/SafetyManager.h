@@ -55,6 +55,22 @@ public:
     );
 
 
+    /*
+     * Debug/diagnostics accessors (WebServer's /diagnostics
+     * page) - expose internal timing state read-only so a
+     * false leak/stall trigger can be understood after the
+     * fact without guessing at what the safety loop was seeing.
+     */
+
+    static bool isManualFlowAllowed();
+
+    static uint32_t flowClosedBaselineAgeMs();
+
+    static uint32_t lastFlowChangeAgeMs();
+
+    static uint32_t lastFlowPulseCount();
+
+
 
 private:
 

@@ -731,6 +731,13 @@ bool IrrigationManager::isWashCycle()
 
 
 
+uint32_t IrrigationManager::stateElapsedMs()
+{
+    return millis() - stateStartTime;
+}
+
+
+
 void IrrigationManager::externalTrip(
     ErrorCode error
 )

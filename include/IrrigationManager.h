@@ -75,6 +75,13 @@ public:
     static bool isWashCycle();
 
 
+    /*
+     * How long the current state has been active. Diagnostics-
+     * only (WebServer's /diagnostics page).
+     */
+    static uint32_t stateElapsedMs();
+
+
 
 private:
 

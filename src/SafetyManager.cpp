@@ -540,6 +540,34 @@ void SafetyManager::setManualFlowAllowed(
 
 
 
+bool SafetyManager::isManualFlowAllowed()
+{
+    return manualFlowAllowed;
+}
+
+
+
+uint32_t SafetyManager::flowClosedBaselineAgeMs()
+{
+    return millis() - flowClosedBaselineAt;
+}
+
+
+
+uint32_t SafetyManager::lastFlowChangeAgeMs()
+{
+    return millis() - lastFlowChange;
+}
+
+
+
+uint32_t SafetyManager::lastFlowPulseCount()
+{
+    return lastFlowCount;
+}
+
+
+
 void SafetyManager::clear()
 {
 
