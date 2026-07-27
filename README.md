@@ -155,6 +155,62 @@ wrong — once per actual problem, never spammed on repeat.
 
 <br>
 
+## 🔌 Hardware
+
+Everything hangs off a single **Seeed Studio XIAO ESP32-S3** — relays out on
+one side, sensors and buttons in on the other.
+
+```mermaid
+flowchart LR
+    MCU(["🧠 XIAO ESP32-S3"])
+
+    MCU -->|GPIO1| Perist["⚙️ Peristaltic dosing pump<br>(relay)"]
+    MCU -->|GPIO2| Valve["🚰 Electrovalve<br>(relay)"]
+    MCU -->|GPIO3| Spray["🌊 Spray pump<br>(relay)"]
+    MCU -->|GPIO9| LED["🚦 RGB status LED"]
+
+    Full["🔼 Float switch — Full"] -->|GPIO4| MCU
+    Empty["🔽 Float switch — Empty"] -->|GPIO5| MCU
+    Flow["🔄 Flow meter<br>(pulse)"] -->|GPIO6| MCU
+    Reset["🔘 Fault reset button"] -->|GPIO7| MCU
+    Start["▶️ Start button"] -->|GPIO8| MCU
+
+    style MCU fill:#5865f2,stroke:#5865f2,color:#fff
+    style Perist fill:#3ba3ff,stroke:#3ba3ff,color:#fff
+    style Valve fill:#3ba3ff,stroke:#3ba3ff,color:#fff
+    style Spray fill:#3ba3ff,stroke:#3ba3ff,color:#fff
+    style LED fill:#3ba3ff,stroke:#3ba3ff,color:#fff
+    style Full fill:#28a745,stroke:#28a745,color:#fff
+    style Empty fill:#28a745,stroke:#28a745,color:#fff
+    style Flow fill:#28a745,stroke:#28a745,color:#fff
+    style Reset fill:#f0ad4e,stroke:#f0ad4e,color:#fff
+    style Start fill:#f0ad4e,stroke:#f0ad4e,color:#fff
+```
+
+All inputs are pulled up internally and read active-low — switches and
+buttons just need to short the pin to ground, no external resistors
+needed.
+
+<br>
+
+### 🧰 What you need to build one
+
+| Part | Notes |
+|:--|:--|
+| **Seeed Studio XIAO ESP32-S3** | The brain — small enough to fit in almost any enclosure |
+| **3-channel relay module** | Drives the dosing pump, valve, and spray pump — active-high |
+| **Peristaltic dosing pump** | Meters the concentrate; 12V models are common |
+| **Electrovalve (solenoid valve)** | Standard irrigation valve, controls water fill |
+| **Water pump** | Pushes the mixed water out through the irrigation lines |
+| **2× float switches** | One near the top of the tank (full), one near the bottom (empty) |
+| **Flow meter** | Hall-effect pulse type (e.g. YF-S201 or similar), used to measure fill volume |
+| **RGB LED** (+ resistors, or an addressable module) | Status indicator — green/blue/red |
+| **2× momentary push buttons** | Manual start, and manual fault reset |
+| **Power supply** | 12V (or whatever your pumps/valve need) + a 5V/3.3V regulator for the ESP32 |
+| **Small mixing tank, tubing, enclosure** | Whatever fits your setup |
+
+<br>
+
 ## 📄 License
 
 Personal project — no license file yet. Ask before reusing.
