@@ -578,9 +578,15 @@ static void handleConfigPage(AsyncWebServerRequest *request)
     html += "'>";
 
     html += "<label>Restart device after WiFi down for (minutes)</label>";
-    html += "<input name='wifi_giveup' type='number' inputmode='numeric' step='1' min='1' value='";
+    html += "<input name='wifi_giveup' type='number' inputmode='numeric' step='1' min='0' value='";
     html += String(config.wifiGiveUpRestartMinutes);
     html += "'>";
+
+    html += "<p class='hint'>0 = never auto-reboot - keep retrying in the background "
+            "indefinitely instead. Irrigation, safety and the schedule all keep working "
+            "normally while disconnected either way; rebooting only matters for eventually "
+            "falling back to the ZanzNuke-Setup access point if the saved network is gone "
+            "for good. Leave this at 0 if you'd rather it never do that on its own.</p>";
 
     html += "</div>";
 
@@ -674,7 +680,7 @@ static void handleConfigSave(AsyncWebServerRequest *request)
 
     if(request->hasParam("wifi_giveup"))
         config.wifiGiveUpRestartMinutes =
-            (uint32_t)clampf(request->getParam("wifi_giveup")->value().toFloat(), 1.0f, 60.0f);
+            (uint32_t)clampf(request->getParam("wifi_giveup")->value().toFloat(), 0.0f, 60.0f);
 
     if(request->hasParam("wdt_timeout"))
         config.watchdogTimeoutSeconds =

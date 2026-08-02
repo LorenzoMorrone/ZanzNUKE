@@ -491,7 +491,22 @@ void NetworkManager::update()
             millis();
 
 
+        /*
+         * 0 means "never give up on my own" - irrigation, safety
+         * and the schedule all keep running fine off the internal
+         * clock while disconnected (see Scheduler/SafetyManager/
+         * IrrigationManager, none of which check WiFi state), so
+         * forcing a reboot here is a choice, not a requirement.
+         * Falling back to broadcasting ZanzNuke-Setup on a long
+         * outage is exactly the behavior some setups don't want
+         * (it silently stops the scheduler until someone notices
+         * and reconnects it by hand), so respect 0 as "keep
+         * retrying WiFi.reconnect() forever, don't reboot".
+         */
+
         if(
+            config.wifiGiveUpRestartMinutes > 0
+            &&
             now - disconnectedSinceMs
             >
             config.wifiGiveUpRestartMinutes * 60UL * 1000UL

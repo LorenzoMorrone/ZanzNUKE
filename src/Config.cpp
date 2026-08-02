@@ -216,11 +216,13 @@ bool IrrigationConfig::load()
         repaired = true;
     }
 
-    if(wifiGiveUpRestartMinutes == 0)
-    {
-        wifiGiveUpRestartMinutes = 3;
-        repaired = true;
-    }
+    /*
+     * Unlike the other timing fields above, 0 here is a
+     * deliberate, meaningful value ("never auto-reboot on WiFi
+     * loss - keep retrying forever, don't fall back to AP mode
+     * on my own") rather than a sign of corruption, so it's
+     * intentionally excluded from the zero-repair pass.
+     */
 
     if(repaired)
     {
