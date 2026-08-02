@@ -104,6 +104,13 @@ bool IrrigationConfig::load()
         );
 
 
+    networklessMode =
+        preferences.getBool(
+            "netless",
+            false
+        );
+
+
     watchdogTimeoutSeconds =
         preferences.getUInt(
             "wdttimeout",
@@ -319,6 +326,12 @@ bool IrrigationConfig::save()
     preferences.putUInt(
         "wifigiveup",
         wifiGiveUpRestartMinutes
+    );
+
+
+    preferences.putBool(
+        "netless",
+        networklessMode
     );
 
 

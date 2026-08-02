@@ -9,6 +9,7 @@ Button::Button(
 )
     : pin(pin),
       lastChangeMs(0),
+      pressStartMs(0),
       debouncedState(false),
       rawStateLast(false),
       latched(false)
@@ -76,6 +77,8 @@ bool Button::pressed()
 
                 latched = true;
 
+                pressStartMs = millis();
+
                 return true;
 
             }
@@ -94,5 +97,18 @@ bool Button::pressed()
 
 
     return false;
+
+}
+
+
+
+uint32_t Button::heldMs() const
+{
+
+    if(!debouncedState)
+        return 0;
+
+
+    return millis() - pressStartMs;
 
 }

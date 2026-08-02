@@ -28,6 +28,35 @@ uint32_t NetworkManager::lastReconnectAttemptMs = 0;
 
 
 /*
+ * RTC "noinit" memory, not NVS: it must survive ESP.restart() (so
+ * forceSetupMode() can hand off to the next boot) but deliberately
+ * must NOT survive a full power loss - see forceSetupMode()'s
+ * declaration comment in the header.
+ *
+ * RTC_DATA_ATTR (used here originally) does NOT work for this:
+ * despite living in RTC memory, it's re-initialized back to its
+ * declared default by the startup code on every boot EXCEPT a
+ * deep-sleep wake - and ESP.restart() is a software reset, not a
+ * deep-sleep wake, so the flag was being wiped back to false
+ * before begin() ever got a chance to see it true. RTC_NOINIT_ATTR
+ * is the one that's genuinely left alone by the startup code
+ * across a software reset.
+ *
+ * The tradeoff: RTC_NOINIT_ATTR's content is undefined garbage on
+ * a true cold power-on (nothing has ever written it yet), so a
+ * magic-number sentinel is used instead of a plain bool - any
+ * value other than the exact sentinel is treated as "not
+ * requested", which safely covers both the normal "already
+ * consumed" (0) case and random power-on garbage (astronomically
+ * unlikely to collide with a specific 32-bit constant).
+ */
+
+RTC_NOINIT_ATTR static uint32_t forceSetupModeMagic;
+
+constexpr uint32_t FORCE_SETUP_MODE_MAGIC = 0x5A17C0DE;
+
+
+/*
  * How often to actively retry a lost STA connection, and how
  * long to keep retrying before giving up and rebooting, both
  * come from config (see Config.h's "Advanced: WiFi resilience
@@ -66,6 +95,27 @@ void NetworkManager::begin()
 
 
 
+    bool forceSetupRequested =
+        (forceSetupModeMagic == FORCE_SETUP_MODE_MAGIC);
+
+    forceSetupModeMagic = 0;
+
+
+    if(forceSetupRequested)
+    {
+
+        Serial.println(
+            "[WiFi] Forced setup mode requested - skipping saved network"
+        );
+
+        startAP();
+
+        return;
+
+    }
+
+
+
     if(
         connectSaved()
     )
@@ -76,6 +126,42 @@ void NetworkManager::begin()
             "[WiFi] Connected to saved network"
         );
         return;
+    }
+
+
+
+    /*
+     * Networkless mode: a saved network exists but couldn't be
+     * reached just now - rather than assuming it's gone for good
+     * and falling back to the setup AP, stay in station mode and
+     * let update()'s normal background retry loop keep trying.
+     * Seed the same state that loop would set on a live
+     * disconnect, since we never actually got connected here for
+     * it to detect a transition from.
+     */
+
+    if(
+        config.networklessMode
+        &&
+        config.wifiSSID.length() > 0
+    )
+    {
+
+        Serial.println(
+            "[WiFi] Networkless mode: couldn't connect right now, "
+            "will keep retrying in the background"
+        );
+
+        wifiConnected = false;
+
+        apMode = false;
+
+        disconnectedSinceMs = millis();
+
+        lastReconnectAttemptMs = millis();
+
+        return;
+
     }
 
 
@@ -492,19 +578,25 @@ void NetworkManager::update()
 
 
         /*
-         * 0 means "never give up on my own" - irrigation, safety
-         * and the schedule all keep running fine off the internal
-         * clock while disconnected (see Scheduler/SafetyManager/
-         * IrrigationManager, none of which check WiFi state), so
-         * forcing a reboot here is a choice, not a requirement.
-         * Falling back to broadcasting ZanzNuke-Setup on a long
-         * outage is exactly the behavior some setups don't want
-         * (it silently stops the scheduler until someone notices
-         * and reconnects it by hand), so respect 0 as "keep
-         * retrying WiFi.reconnect() forever, don't reboot".
+         * Skip the give-up-and-reboot entirely in networkless mode,
+         * or if wifiGiveUpRestartMinutes was manually set to 0
+         * (same meaning, exposed as a raw number for anyone who
+         * wants this specific behavior without opting into
+         * everything networklessMode also implies at boot - see
+         * begin()). Irrigation, safety and the schedule all keep
+         * running fine off the internal clock while disconnected
+         * (see Scheduler/SafetyManager/IrrigationManager, none of
+         * which check WiFi state), so forcing a reboot here is a
+         * choice, not a requirement - and rebooting would normally
+         * matter because a long-enough outage falls back to
+         * broadcasting ZanzNuke-Setup, silently pausing the
+         * schedule until someone notices and reconnects it by
+         * hand, which is exactly what these settings opt out of.
          */
 
         if(
+            !config.networklessMode
+            &&
             config.wifiGiveUpRestartMinutes > 0
             &&
             now - disconnectedSinceMs
@@ -579,4 +671,25 @@ String NetworkManager::ip()
 bool NetworkManager::isAPMode()
 {
     return apMode;
+}
+
+
+
+void NetworkManager::forceSetupMode()
+{
+
+    forceSetupModeMagic = FORCE_SETUP_MODE_MAGIC;
+
+
+    /*
+     * Same pattern as every other self-triggered restart in this
+     * file (give-up-and-recover above, the setup server's /save
+     * handler) - a short delay lets whatever's in flight (a web
+     * response, a Serial log) actually get out before the reboot.
+     */
+
+    delay(200);
+
+    ESP.restart();
+
 }

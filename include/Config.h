@@ -68,6 +68,23 @@ struct IrrigationConfig
 
 
     /*
+     * When true, the device assumes WiFi is only occasionally
+     * available (e.g. a phone hotspot turned on now and then, a
+     * weak/far router) rather than treating any extended outage as
+     * something to recover from by rebooting. With it on,
+     * NetworkManager never auto-restarts on a lost connection and
+     * never auto-falls-back to broadcasting ZanzNuke-Setup just
+     * because a saved network couldn't be reached - it simply
+     * keeps retrying in the background, indefinitely, without
+     * interrupting anything. See NetworkManager.cpp for the full
+     * behavior. Irrigation/safety/scheduling never depended on
+     * WiFi to begin with; this only changes how NetworkManager
+     * itself reacts to not having it.
+     */
+    bool networklessMode = false;
+
+
+    /*
      * Advanced: system watchdog (main.cpp). Only takes effect
      * after a restart - the watchdog is initialized once in
      * setup() and can't be reconfigured while running.

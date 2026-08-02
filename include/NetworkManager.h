@@ -27,6 +27,28 @@ public:
     static bool isAPMode();
 
 
+    /*
+     * Forces the setup access point back on, without touching the
+     * saved SSID/password - for when the device needs to be
+     * reconfigured (new network, moved house, etc.) but either
+     * isn't currently reachable to do that through the normal
+     * Config page WiFi fields (e.g. it's off retrying quietly in
+     * Networkless mode), or the physical fault-reset button is
+     * being used to request it directly (see main.cpp's long-press
+     * handling). Sets a flag that survives the restart this
+     * triggers (RTC memory, not NVS - deliberately doesn't survive
+     * a full power loss, so a normal power-cycle still goes back
+     * to trying the saved network rather than getting stuck
+     * offering setup mode forever) and reboots immediately; on the
+     * next boot, begin() sees the flag, consumes it, and jumps
+     * straight to the setup AP without even attempting
+     * connectSaved() - the saved credentials are left untouched,
+     * so if nothing new gets saved, a subsequent power-cycle just
+     * resumes trying them normally.
+     */
+    static void forceSetupMode();
+
+
 private:
 
     static bool wifiConnected;

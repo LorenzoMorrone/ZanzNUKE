@@ -387,6 +387,58 @@ void loop()
     }
 
 
+    /*
+     * Hold the fault-reset button for WIFI_RESET_HOLD_MS to force
+     * the device back into WiFi setup mode (broadcasting
+     * ZanzNuke-Setup) - the physical way to reconfigure it when
+     * it's not reachable over the network to do that from the
+     * Config page instead (e.g. it's quietly retrying a network
+     * that's no longer there in Networkless mode). A plain press
+     * already requested a fault clear above the moment it was
+     * detected; holding past the threshold is additive, not a
+     * different gesture - fires once per hold via wifiResetFired,
+     * consumed here and re-armed once the button is released.
+     */
+
+    constexpr uint32_t WIFI_RESET_HOLD_MS = 5000;
+
+    static bool wifiResetFired = false;
+
+
+    if(resetButton.heldMs() >= WIFI_RESET_HOLD_MS)
+    {
+
+        if(!wifiResetFired)
+        {
+
+            wifiResetFired = true;
+
+            Serial.println(
+                "[Main] Fault reset button held - forcing WiFi setup mode"
+            );
+
+            EventLog::add(
+                "Forced WiFi setup mode (button held)"
+            );
+
+            RGBLed::set(LedMode::YELLOW);
+
+            RGBLed::update();
+
+
+            NetworkManager::forceSetupMode();
+
+        }
+
+    }
+    else
+    {
+
+        wifiResetFired = false;
+
+    }
+
+
 
 
 
