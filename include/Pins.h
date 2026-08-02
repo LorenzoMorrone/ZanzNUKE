@@ -55,4 +55,4 @@ constexpr bool RELAY_ACTIVE_HIGH = true;
  *   - bottom (empty) float: closed = water present (not empty),
  *                            open = below minimum (empty)
  */
-constexpr bool FLOAT_ACTIVE_LOW = true;
+constexpr bool FLOAT_ACTIVE_LOW = false;

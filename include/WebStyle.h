@@ -24,7 +24,7 @@
 inline String htmlHead(const char* title)
 {
 
-    String html = "<!DOCTYPE html><html><head><title>";
+    String html = "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><title>";
 
     html += title;
 

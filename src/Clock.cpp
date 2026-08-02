@@ -18,6 +18,28 @@ void Clock::begin()
 
 
 
+void Clock::resync()
+{
+
+    /*
+     * Calling configTime() again forces the SNTP client to fire
+     * an immediate sync attempt rather than waiting for its normal
+     * background poll interval - important right after reconnecting,
+     * since otherwise the clock could sit un-resynced (running on
+     * free-running drift alone) for up to an hour.
+     */
+
+    configTime(
+        3600,
+        3600,
+        "pool.ntp.org",
+        "time.nist.gov"
+    );
+
+}
+
+
+
 bool Clock::valid()
 {
 

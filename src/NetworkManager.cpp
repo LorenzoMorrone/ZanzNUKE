@@ -5,6 +5,7 @@
 
 #include "Config.h"
 #include "WebStyle.h"
+#include "Clock.h"
 
 
 /*
@@ -451,6 +452,23 @@ void NetworkManager::update()
         Serial.println(
             WiFi.localIP().toString()
         );
+
+        /*
+         * The device kept running on its own while offline
+         * (irrigation/scheduling/safety never depend on WiFi -
+         * see IrrigationManager/SafetyManager/Scheduler), free-
+         * running the clock off its internal timer in the
+         * meantime. Now that a network is back: pull the clock
+         * back in line immediately rather than waiting for SNTP's
+         * own poll interval, and push out anything that piled up
+         * in the notification backlog while we couldn't reach
+         * Pushover.
+         */
+
+        Clock::resync();
+
+        Pushover::flushPending();
+
     }
 
 

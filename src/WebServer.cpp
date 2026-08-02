@@ -18,6 +18,7 @@
 #include "ErrorStrings.h"
 #include "WebStyle.h"
 #include "EventLog.h"
+#include "Pushover.h"
 
 
 AsyncWebServer server(80);
@@ -1028,6 +1029,16 @@ static void handleDiagnostics(AsyncWebServerRequest *request)
 
     html += "<div style='grid-column:1/-1'><span class='stat-label'>IP address</span><span class='stat-value'>";
     html += NetworkManager::ip();
+    html += "</span></div>";
+
+    uint8_t pendingNotifications = Pushover::pendingCount();
+
+    html += "<div style='grid-column:1/-1'><span class='stat-label'>Pending notifications</span><span class='stat-value ";
+    html += (pendingNotifications > 0 ? "err" : "ok");
+    html += "'>";
+    html += (pendingNotifications > 0)
+        ? (String(pendingNotifications) + " queued - will send once reconnected")
+        : "none";
     html += "</span></div>";
 
     html += "</div></div>";
