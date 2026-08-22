@@ -1,11 +1,12 @@
 #include "NetworkManager.h"
-#include <Pushover.h>
+#include <Notification.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
 #include "Config.h"
 #include "WebStyle.h"
 #include "Clock.h"
+#include "Telegram.h"
 
 
 /*
@@ -231,7 +232,7 @@ bool NetworkManager::connectSaved()
             Serial.println(
                 WiFi.localIP().toString()
             );
-            Pushover::send(
+            Notification::send(
                 "ZanzNuke - New IP address",
                 WiFi.localIP().toString()
             );
@@ -553,7 +554,7 @@ void NetworkManager::update()
 
         Clock::resync();
 
-        Pushover::flushPending();
+        Notification::flushPending();
 
     }
 
@@ -634,6 +635,9 @@ void NetworkManager::update()
         }
 
     }
+
+    // Poll Telegram bot for commands when connected
+    Telegram::update();
 
 }
 

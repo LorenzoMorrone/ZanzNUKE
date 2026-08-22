@@ -111,6 +111,15 @@ struct IrrigationConfig
     String pushoverUser;
 
     /*
+     * Telegram
+     */
+    bool telegramEnabled = false;
+
+    String telegramBotToken;
+
+    String telegramChatId;
+
+    /*
      * Save/load
      */
 

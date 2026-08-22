@@ -18,7 +18,7 @@
 #include "ErrorStrings.h"
 #include "WebStyle.h"
 #include "EventLog.h"
-#include "Pushover.h"
+#include "Notification.h"
 
 
 AsyncWebServer server(80);
@@ -549,16 +549,30 @@ static void handleConfigPage(AsyncWebServerRequest *request)
             "button does, for when this page isn't reachable to begin with (e.g. "
             "Networkless mode is quietly retrying a network that's no longer around).</p>";
 
-    html += "</div><div class='card'><h3>Pushover notifications</h3>";
+    html += "</div><div class='card'><h3>Notifications</h3>";
 
-    html += "<label>App token</label>";
+    html += "<div class='row'><input type='checkbox' id='use_telegram' name='use_telegram'";
+    if(config.telegramEnabled) html += " checked";
+    html += "><label for='use_telegram' style='margin:0'>Use Telegram bot instead of Pushover</label></div>";
+
+    html += "<label>Pushover App token</label>";
     html += "<input name='pushover_token' type='text' value='";
     html += config.pushoverToken;
     html += "'>";
 
-    html += "<label>User key</label>";
+    html += "<label>Pushover User key</label>";
     html += "<input name='pushover_user' type='text' value='";
     html += config.pushoverUser;
+    html += "'>";
+
+    html += "<label>Telegram bot token</label>";
+    html += "<input name='telegram_token' type='text' value='";
+    html += config.telegramBotToken;
+    html += "'>";
+
+    html += "<label>Telegram chat id</label>";
+    html += "<input name='telegram_chat_id' type='text' value='";
+    html += config.telegramChatId;
     html += "'>";
 
     html += "</div>";
@@ -749,6 +763,14 @@ static void handleConfigSave(AsyncWebServerRequest *request)
 
     if(request->hasParam("pushover_user"))
         config.pushoverUser = request->getParam("pushover_user")->value();
+
+    config.telegramEnabled = request->hasParam("use_telegram");
+
+    if(request->hasParam("telegram_token"))
+        config.telegramBotToken = request->getParam("telegram_token")->value();
+
+    if(request->hasParam("telegram_chat_id"))
+        config.telegramChatId = request->getParam("telegram_chat_id")->value();
 
 
     /*
@@ -1094,7 +1116,7 @@ static void handleDiagnostics(AsyncWebServerRequest *request)
     html += NetworkManager::ip();
     html += "</span></div>";
 
-    uint8_t pendingNotifications = Pushover::pendingCount();
+    uint8_t pendingNotifications = Notification::pendingCount();
 
     html += "<div style='grid-column:1/-1'><span class='stat-label'>Pending notifications</span><span class='stat-value ";
     html += (pendingNotifications > 0 ? "err" : "ok");

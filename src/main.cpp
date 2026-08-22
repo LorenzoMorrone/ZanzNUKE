@@ -25,7 +25,7 @@
 
 #include "Button.h"
 
-#include "Pushover.h"
+#include "Notification.h"
 
 #include "OTAUpdate.h"
 
@@ -139,7 +139,7 @@ void setup()
     Clock::begin();
 
 
-    Pushover::begin();
+    Notification::begin();
 
 
     /*
@@ -552,7 +552,7 @@ void loop()
 
 
 
-        Pushover::send(
+        Notification::send(
             "ZanzNuke ERROR",
             message
         );

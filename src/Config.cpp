@@ -146,6 +146,27 @@ bool IrrigationConfig::load()
         );
 
 
+    telegramEnabled =
+        preferences.getBool(
+            "telen",
+            false
+        );
+
+
+    telegramBotToken =
+        preferences.getString(
+            "ttoken",
+            ""
+        );
+
+
+    telegramChatId =
+        preferences.getString(
+            "tchat",
+            ""
+        );
+
+
     preferences.end();
 
     /*
@@ -362,6 +383,24 @@ bool IrrigationConfig::save()
     preferences.putString(
         "puser",
         pushoverUser
+    );
+
+
+    preferences.putBool(
+        "telen",
+        telegramEnabled
+    );
+
+
+    preferences.putString(
+        "ttoken",
+        telegramBotToken
+    );
+
+
+    preferences.putString(
+        "tchat",
+        telegramChatId
     );
 
 

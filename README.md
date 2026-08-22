@@ -153,6 +153,8 @@ Add a [Pushover](https://pushover.net/) token and user key on the Config
 page and you'll get a phone notification the moment something goes
 wrong — once per actual problem, never spammed on repeat.
 
+Telegram: optionally enable Telegram notifications in the Config page by supplying a bot token and a target chat ID. When enabled, notifications are sent via your Telegram bot using HTML formatting (bold title, italic timestamp, body with newlines). Remote commands from the configured chat ID are accepted: `/nuke`, `/stop`, `/status`, `/schedule`, `/clear`.
+
 <br>
 
 ## 🔌 Hardware
@@ -183,8 +185,6 @@ flowchart LR
     style Full fill:#28a745,stroke:#28a745,color:#fff
     style Empty fill:#28a745,stroke:#28a745,color:#fff
     style Flow fill:#28a745,stroke:#28a745,color:#fff
-    style Reset fill:#f0ad4e,stroke:#f0ad4e,color:#fff
-    style Start fill:#f0ad4e,stroke:#f0ad4e,color:#fff
 ```
 
 All inputs are pulled up internally and read active-low — switches and
