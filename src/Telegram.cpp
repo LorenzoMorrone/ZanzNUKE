@@ -2,6 +2,7 @@
 
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <time.h>
 
 #include "Config.h"
 #include "Clock.h"
@@ -557,8 +558,14 @@ void Telegram::update()
 
             // chat id may be in cq["message"]["chat"]["id"] or from.id
             String chatId = cq["message"].isNull() ? String(cq["from"]["id"].as<long long>()) : String(cq["message"]["chat"]["id"].as<long long>());
+            // drop callbacks older than 60s to avoid replay/spam when offline
+            time_t now = time(nullptr);
+            long msgDate = 0;
+            if(!cq["message"].isNull() && cq["message"]["date"].is<long long>()) msgDate = cq["message"]["date"].as<long long>();
+            else if(cq["date"].is<long long>()) msgDate = cq["date"].as<long long>();
+            if(msgDate > 0 && (now - msgDate) > 60) { lastUpdateId = updateId; continue; }
 
-            Serial.print("[Telegram] Callback from "); Serial.print(chatId); Serial.print(": "); Serial.println(data);
+            data.trim();
 
             // only accept callbacks from configured chat id
             if(config.telegramChatId.length() > 0 && chatId != config.telegramChatId)
@@ -566,8 +573,6 @@ void Telegram::update()
                 lastUpdateId = updateId;
                 continue;
             }
-
-            data.trim();
 
             // process callback data as commands (same as text handlers)
             if(data.startsWith("/nuke"))
@@ -679,6 +684,12 @@ void Telegram::update()
         }
 
         String chatId = String(msg["chat"]["id"].as<long long>());
+
+        // drop messages older than 60s to avoid replay/spam when offline
+        time_t now = time(nullptr);
+        long msgDate = 0;
+        if(msg["date"].is<long long>()) msgDate = msg["date"].as<long long>();
+        if(msgDate > 0 && (now - msgDate) > 60) { lastUpdateId = updateId; continue; }
 
         String text = msg["text"].as<const char*>();
 
