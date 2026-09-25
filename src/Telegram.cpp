@@ -4,6 +4,10 @@
 #include <HTTPClient.h>
 #include <time.h>
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
+
 #include "Config.h"
 #include "Clock.h"
 #include "IrrigationManager.h"
@@ -24,9 +28,309 @@ struct PendingNotification
 
 constexpr uint8_t MAX_PENDING = 10;
 
+enum class TelegramAction
+{
+    SendMessage,
+    SendKeyboard,
+    SendKeyboardTo,
+    SendTo
+};
+
+struct TelegramQueueItem
+{
+    TelegramAction action;
+    String title;
+    String message;
+    String chatId;
+};
+
+static QueueHandle_t telegramQueue = nullptr;
+static TaskHandle_t telegramTaskHandle = nullptr;
+
 static PendingNotification t_pending[MAX_PENDING];
 static uint8_t t_pendingCount = 0;
 static int32_t t_lastMessageId = 0;
+
+static String urlEncode(const String &s);
+static String htmlEscape(const String &s);
+static bool t_sendNow(const String &title, const String &message);
+static void telegramPollOnce();
+
+static void telegramWorkerTask(void *arg)
+{
+    (void)arg;
+
+    TelegramQueueItem item;
+
+    for(;;)
+    {
+        if(xQueueReceive(telegramQueue, &item, pdMS_TO_TICKS(1000)) == pdTRUE)
+        {
+            if(
+                WiFi.status() == WL_CONNECTED
+                && config.telegramBotToken.length() > 0
+            )
+            {
+                switch(item.action)
+                {
+                case TelegramAction::SendMessage:
+                    t_sendNow(item.title, item.message);
+                    break;
+
+                case TelegramAction::SendKeyboard:
+                    // actual keyboard send executes here, not on the
+                    // irrigation loop task.
+                    {
+                        String kb = item.message;
+                        kb.replace("\n", "");
+                        kb.replace("\r", "");
+                        while(kb.indexOf("  ") >= 0) kb.replace("  ", " ");
+                        bool isInline = (kb.indexOf("\"inline_keyboard\"") >= 0);
+                        if(isInline)
+                        {
+                            if(t_lastMessageId > 0)
+                            {
+                                WiFiClientSecure client;
+                                client.setInsecure();
+                                client.setTimeout(1500);
+                                HTTPClient http;
+                                http.setConnectTimeout(1500);
+                                http.setTimeout(1500);
+                                String editUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/editMessageReplyMarkup";
+                                http.begin(client, editUrl);
+                                http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                                String body = "chat_id=" + urlEncode(config.telegramChatId) + "&message_id=" + String(t_lastMessageId) + "&reply_markup=" + urlEncode(kb);
+                                int result = http.POST(body);
+                                String resp = http.getString();
+                                if(result <= 0 || (result != 200 && result != 201)) {
+                                    Serial.print("[Telegram] editMessageReplyMarkup failed: "); Serial.print(result);
+                                    if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                                    else Serial.println();
+                                }
+                                http.end();
+                            }
+                            else
+                            {
+                                WiFiClientSecure client;
+                                client.setInsecure();
+                                client.setTimeout(1500);
+                                HTTPClient http;
+                                http.setConnectTimeout(1500);
+                                http.setTimeout(1500);
+                                String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
+                                http.begin(client, sendUrl);
+                                http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                                String body = "chat_id=" + urlEncode(config.telegramChatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
+                                int result = http.POST(body);
+                                String resp = http.getString();
+                                if(result <= 0 || (result != 200 && result != 201)) {
+                                    Serial.print("[Telegram] send inline keyboard failed: "); Serial.print(result);
+                                    if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                                    else Serial.println();
+                                }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+                                DynamicJsonDocument rdoc(1024);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+                                if(!deserializeJson(rdoc, resp))
+                                {
+                                    if(rdoc["ok"].as<bool>())
+                                    {
+                                        t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
+                                    }
+                                }
+                                http.end();
+                            }
+                        }
+                        else
+                        {
+                            WiFiClientSecure client;
+                            client.setInsecure();
+                            client.setTimeout(1500);
+                            HTTPClient http;
+                            http.setConnectTimeout(1500);
+                            http.setTimeout(1500);
+                            String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
+                            http.begin(client, sendUrl);
+                            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                            String body = "chat_id=" + urlEncode(config.telegramChatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
+                            int result = http.POST(body);
+                            String resp = http.getString();
+                            if(result <= 0 || (result != 200 && result != 201)) {
+                                Serial.print("[Telegram] sendKeyboard failed: "); Serial.print(result);
+                                if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                                else Serial.println();
+                            }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+                            DynamicJsonDocument rdoc(1024);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+                            if(!deserializeJson(rdoc, resp))
+                            {
+                                if(rdoc["ok"].as<bool>())
+                                {
+                                    t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
+                                }
+                            }
+                            http.end();
+                        }
+                    }
+                    break;
+
+                case TelegramAction::SendKeyboardTo:
+                    {
+                        String kb = item.message;
+                        kb.replace("\n", "");
+                        kb.replace("\r", "");
+                        while(kb.indexOf("  ") >= 0) kb.replace("  ", " ");
+                        bool isInline = (kb.indexOf("\"inline_keyboard\"") >= 0);
+                        if(isInline)
+                        {
+                            WiFiClientSecure client;
+                            client.setInsecure();
+                            client.setTimeout(1500);
+                            HTTPClient http;
+                            http.setConnectTimeout(1500);
+                            http.setTimeout(1500);
+                            String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
+                            http.begin(client, sendUrl);
+                            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                            String body = "chat_id=" + urlEncode(item.chatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
+                            int result = http.POST(body);
+                            String resp = http.getString();
+                            if(result <= 0 || (result != 200 && result != 201)) {
+                                Serial.print("[Telegram] sendKeyboardTo (inline) failed: "); Serial.print(result);
+                                if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                                else Serial.println();
+                            }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+                            DynamicJsonDocument rdoc(1024);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+                            if(!deserializeJson(rdoc, resp))
+                            {
+                                if(rdoc["ok"].as<bool>())
+                                {
+                                    t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
+                                }
+                            }
+                            http.end();
+                        }
+                        else
+                        {
+                            WiFiClientSecure client;
+                            client.setInsecure();
+                            client.setTimeout(1500);
+                            HTTPClient http;
+                            http.setConnectTimeout(1500);
+                            http.setTimeout(1500);
+                            String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
+                            http.begin(client, sendUrl);
+                            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                            String body = "chat_id=" + urlEncode(item.chatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
+                            int result = http.POST(body);
+                            String resp = http.getString();
+                            if(result <= 0 || (result != 200 && result != 201)) {
+                                Serial.print("[Telegram] sendKeyboardTo failed: "); Serial.print(result);
+                                if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                                else Serial.println();
+                            }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+                            DynamicJsonDocument rdoc(1024);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+                            if(!deserializeJson(rdoc, resp))
+                            {
+                                if(rdoc["ok"].as<bool>())
+                                {
+                                    t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
+                                }
+                            }
+                            http.end();
+                        }
+                    }
+                    break;
+
+                case TelegramAction::SendTo:
+                    {
+                        WiFiClientSecure client;
+                        client.setInsecure();
+                        client.setTimeout(1500);
+                        HTTPClient http;
+                        http.setConnectTimeout(1500);
+                        http.setTimeout(1500);
+                        String url = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
+                        http.begin(client, url);
+                        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                        String titleEsc = htmlEscape(item.title);
+                        String timeEsc = htmlEscape(Clock::datetime());
+                        String bodyEsc = htmlEscape(item.message);
+                        String textHtml = String("<b>") + titleEsc + "</b>\n" + String("<i>") + timeEsc + "</i>\n" + bodyEsc;
+                        String body = "chat_id=" + urlEncode(item.chatId) + "&text=" + urlEncode(textHtml) + "&parse_mode=HTML";
+                        int result = http.POST(body);
+                        String resp = http.getString();
+                        if(result <= 0 || (result != 200 && result != 201)) {
+                            Serial.print("[Telegram] sendTo failed: "); Serial.print(result);
+                            if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
+                            else Serial.println();
+                        }
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+                        DynamicJsonDocument rdoc(1024);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+                        if(!deserializeJson(rdoc, resp))
+                        {
+                            if(rdoc["ok"].as<bool>())
+                            {
+                                if(item.chatId == config.telegramChatId)
+                                    t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
+                            }
+                        }
+                        http.end();
+                    }
+                    break;
+                }
+            }
+            else
+            {
+                xQueueSendToFront(telegramQueue, &item, 0);
+                vTaskDelay(pdMS_TO_TICKS(5000));
+                continue;
+            }
+        }
+
+        if(
+            NetworkManager::connected()
+            && config.telegramEnabled
+            && config.telegramBotToken.length() > 0
+        )
+        {
+            telegramPollOnce();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
 
 static void t_enqueue(const String &title, const String &message)
 {
@@ -155,18 +459,16 @@ bool Telegram::send(String title, String message)
     if(config.telegramBotToken.length() == 0 || config.telegramChatId.length() == 0)
         return false;
 
-    // try to flush pending first
-    Telegram::flushPending();
+    if(telegramQueue == nullptr)
+        Telegram::begin();
 
-    if(WiFi.status() != WL_CONNECTED)
-    {
-        t_enqueue(title, message);
-        return false;
-    }
+    TelegramQueueItem item;
+    item.action = TelegramAction::SendMessage;
+    item.title = title;
+    item.message = message;
+    item.chatId = config.telegramChatId;
 
-    bool ok = t_sendNow(title, message);
-    if(!ok) t_enqueue(title, message);
-    return ok;
+    return xQueueSend(telegramQueue, &item, 0) == pdTRUE;
 }
 
 bool Telegram::sendKeyboard(const String &keyboardJson)
@@ -174,127 +476,16 @@ bool Telegram::sendKeyboard(const String &keyboardJson)
     if(config.telegramBotToken.length() == 0 || config.telegramChatId.length() == 0)
         return false;
 
-    if(WiFi.status() != WL_CONNECTED)
-        return false;
+    if(telegramQueue == nullptr)
+        Telegram::begin();
 
-    WiFiClientSecure client;
-    client.setInsecure();
-    client.setTimeout(1500);
+    TelegramQueueItem item;
+    item.action = TelegramAction::SendKeyboard;
+    item.title = "🦟";
+    item.message = keyboardJson;
+    item.chatId = config.telegramChatId;
 
-    HTTPClient http;
-    http.setConnectTimeout(1500);
-    http.setTimeout(1500);
-
-    // Minify keyboard JSON
-    String kb = keyboardJson;
-    kb.replace("\n", "");
-    kb.replace("\r", "");
-    while(kb.indexOf("  ") >= 0) kb.replace("  ", " ");
-
-
-    // Decide behavior based on keyboard type: inline vs reply keyboard
-    bool isInline = (kb.indexOf("\"inline_keyboard\"") >= 0);
-
-    if(isInline)
-    {
-        // For inline keyboards: try editing the last message if we have its id,
-        // otherwise send a new message with inline keyboard attached.
-        if(t_lastMessageId > 0)
-        {
-            // Editing reply_markup only works for inline keyboards
-            String editUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/editMessageReplyMarkup";
-            http.begin(client, editUrl);
-            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-            String body = "chat_id=" + urlEncode(config.telegramChatId) + "&message_id=" + String(t_lastMessageId) + "&reply_markup=" + urlEncode(kb);
-
-            int result = http.POST(body);
-            String resp = http.getString();
-            if(result <= 0 || (result != 200 && result != 201)) {
-                Serial.print("[Telegram] editMessageReplyMarkup failed: "); Serial.print(result);
-                if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-                else Serial.println();
-            }
-
-            http.end();
-            return result == 200 || result == 201;
-        }
-        else
-        {
-            // Send a fresh message with inline keyboard
-            String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
-            http.begin(client, sendUrl);
-            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-            String body = "chat_id=" + urlEncode(config.telegramChatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
-
-            int result = http.POST(body);
-            String resp = http.getString();
-            if(result <= 0 || (result != 200 && result != 201)) {
-                Serial.print("[Telegram] send inline keyboard failed: "); Serial.print(result);
-                if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-                else Serial.println();
-            }
-
-            // try parsing message_id
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-            DynamicJsonDocument rdoc(1024);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-            if(!deserializeJson(rdoc, resp))
-            {
-                if(rdoc["ok"].as<bool>())
-                {
-                    t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
-                }
-            }
-
-            http.end();
-            return result == 200 || result == 201;
-        }
-    }
-
-    // For ReplyKeyboardMarkup (regular persistent keyboard) we must send a new message
-    String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
-    http.begin(client, sendUrl);
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    String body = "chat_id=" + urlEncode(config.telegramChatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
-
-    int result = http.POST(body);
-    String resp = http.getString();
-    if(result <= 0 || (result != 200 && result != 201)) {
-        Serial.print("[Telegram] sendKeyboard failed: "); Serial.print(result);
-        if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-        else Serial.println();
-
-        Serial.print("[Telegram] POST failed, WiFi status: "); Serial.println(WiFi.status());
-        Serial.print("[Telegram] Local IP: "); Serial.println(WiFi.localIP().toString());
-    }
-
-    // try parsing message_id even for fallback send
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    DynamicJsonDocument rdoc(1024);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-    if(!deserializeJson(rdoc, resp))
-    {
-        if(rdoc["ok"].as<bool>())
-        {
-            t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
-        }
-    }
-
-    http.end();
-    return result == 200 || result == 201;
+    return xQueueSend(telegramQueue, &item, 0) == pdTRUE;
 }
 
 bool Telegram::sendKeyboardTo(const String &chatId, const String &keyboardJson)
@@ -302,156 +493,52 @@ bool Telegram::sendKeyboardTo(const String &chatId, const String &keyboardJson)
     if(config.telegramBotToken.length() == 0)
         return false;
 
-    if(WiFi.status() != WL_CONNECTED)
-        return false;
+    if(telegramQueue == nullptr)
+        Telegram::begin();
 
-    WiFiClientSecure client;
-    client.setInsecure();
-    client.setTimeout(1500);
+    TelegramQueueItem item;
+    item.action = TelegramAction::SendKeyboardTo;
+    item.title = "🦟";
+    item.message = keyboardJson;
+    item.chatId = chatId;
 
-    HTTPClient http;
-    http.setConnectTimeout(1500);
-    http.setTimeout(1500);
-
-    // Minify keyboard JSON
-    String kb = keyboardJson;
-    kb.replace("\n", "");
-    kb.replace("\r", "");
-    while(kb.indexOf("  ") >= 0) kb.replace("  ", " ");
-
-    bool isInline = (kb.indexOf("\"inline_keyboard\"") >= 0);
-
-    if(isInline)
-    {
-        // send a new message with inline keyboard
-        String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
-        http.begin(client, sendUrl);
-        http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-        String body = "chat_id=" + urlEncode(chatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
-
-        int result = http.POST(body);
-        String resp = http.getString();
-        if(result <= 0 || (result != 200 && result != 201)) {
-            Serial.print("[Telegram] sendKeyboardTo (inline) failed: "); Serial.print(result);
-            if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-            else Serial.println();
-        }
-
-        // try parsing message_id
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-        DynamicJsonDocument rdoc(1024);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-        if(!deserializeJson(rdoc, resp))
-        {
-            if(rdoc["ok"].as<bool>())
-            {
-                t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
-            }
-        }
-
-        http.end();
-        return result == 200 || result == 201;
-    }
-
-    // ReplyKeyboardMarkup send path
-    String sendUrl = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
-    http.begin(client, sendUrl);
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    String body = "chat_id=" + urlEncode(chatId) + "&text=" + urlEncode("🦟") + "&reply_markup=" + urlEncode(kb);
-
-    int result = http.POST(body);
-    String resp = http.getString();
-    if(result <= 0 || (result != 200 && result != 201)) {
-        Serial.print("[Telegram] sendKeyboardTo failed: "); Serial.print(result);
-        if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-        else Serial.println();
-    }
-
-    // try parsing message_id
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    DynamicJsonDocument rdoc2(1024);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-    if(!deserializeJson(rdoc2, resp))
-    {
-        if(rdoc2["ok"].as<bool>())
-        {
-            t_lastMessageId = rdoc2["result"]["message_id"].as<int32_t>();
-        }
-    }
-
-    http.end();
-    return result == 200 || result == 201;
+    return xQueueSend(telegramQueue, &item, 0) == pdTRUE;
 }
 
 bool Telegram::sendTo(const String &chatId, String title, String message)
 {
     if(config.telegramBotToken.length() == 0) return false;
-    if(WiFi.status() != WL_CONNECTED) return false;
 
-    WiFiClientSecure client;
-    client.setInsecure();
-    client.setTimeout(1500);
+    if(telegramQueue == nullptr)
+        Telegram::begin();
 
-    HTTPClient http;
-    http.setConnectTimeout(1500);
-    http.setTimeout(1500);
+    TelegramQueueItem item;
+    item.action = TelegramAction::SendTo;
+    item.title = title;
+    item.message = message;
+    item.chatId = chatId;
 
-    String url = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
-    http.begin(client, url);
-    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-    String titleEsc = htmlEscape(title);
-    String timeEsc = htmlEscape(Clock::datetime());
-    String bodyEsc = htmlEscape(message);
-    String textHtml = String("<b>") + titleEsc + "</b>\n" + String("<i>") + timeEsc + "</i>\n" + bodyEsc;
-
-    String body = "chat_id=" + urlEncode(chatId) + "&text=" + urlEncode(textHtml) + "&parse_mode=HTML";
-
-    int result = http.POST(body);
-    String resp = http.getString();
-    if(result <= 0 || (result != 200 && result != 201)) {
-        Serial.print("[Telegram] sendTo failed: "); Serial.print(result);
-        if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-        else Serial.println();
-    }
-
-    // parse message_id but only store if it's the configured chat
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-    DynamicJsonDocument rdoc(1024);
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
-    if(!deserializeJson(rdoc, resp))
-    {
-        if(rdoc["ok"].as<bool>())
-        {
-            if(chatId == config.telegramChatId)
-                t_lastMessageId = rdoc["result"]["message_id"].as<int32_t>();
-        }
-    }
-
-    http.end();
-    return result == 200 || result == 201;
+    return xQueueSend(telegramQueue, &item, 0) == pdTRUE;
 }
 
 void Telegram::begin()
 {
-    // No initialization required currently. Placeholder to satisfy linker.
+    if(telegramQueue != nullptr)
+        return;
+
+    telegramQueue = xQueueCreate(8, sizeof(TelegramQueueItem));
+    if(telegramQueue == nullptr)
+        return;
+
+    xTaskCreatePinnedToCore(
+        telegramWorkerTask,
+        "tg_worker",
+        8192,
+        nullptr,
+        1,
+        &telegramTaskHandle,
+        1
+    );
 }
 
 void Telegram::flushPending()
@@ -481,13 +568,13 @@ uint8_t Telegram::pendingCount()
 }
 
 
-void Telegram::update()
+static void telegramPollOnce()
 {
     static int64_t lastUpdateId = 0;
     static uint32_t lastPollMs = 0;
 
     uint32_t now = millis();
-    if(now - lastPollMs < 5000) return; // poll at most every 5s to keep main loop responsive
+    if(now - lastPollMs < 5000) return;
     lastPollMs = now;
 
     if(!NetworkManager::connected()) return;
@@ -516,8 +603,6 @@ void Telegram::update()
     String body = http.getString();
     http.end();
 
-    // DynamicJsonDocument is deprecated in this ArduinoJson version; suppress
-    // the warning for this allocation so we can specify capacity as before.
 #if defined(__GNUC__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -536,52 +621,41 @@ void Telegram::update()
         int64_t updateId = v["update_id"].as<int64_t>();
         if(updateId <= lastUpdateId) continue;
 
-        // handle callback_query (inline keyboard presses) first
         if(!v["callback_query"].isNull())
         {
             JsonVariant cq = v["callback_query"];
-            String cbId = String(cq["id"].as<const char*>());
             String data = String(cq["data"].as<const char*>());
 
-            // chat id may be in cq["message"]["chat"]["id"] or from.id
             String chatId = cq["message"].isNull() ? String(cq["from"]["id"].as<long long>()) : String(cq["message"]["chat"]["id"].as<long long>());
-            // drop callbacks older than 60s to avoid replay/spam when offline
-            time_t now = time(nullptr);
+            time_t nowTs = time(nullptr);
             long msgDate = 0;
             if(!cq["message"].isNull() && cq["message"]["date"].is<long long>()) msgDate = cq["message"]["date"].as<long long>();
             else if(cq["date"].is<long long>()) msgDate = cq["date"].as<long long>();
-            if(msgDate > 0 && (now - msgDate) > 60) { lastUpdateId = updateId; continue; }
+            if(msgDate > 0 && (nowTs - msgDate) > 60) { lastUpdateId = updateId; continue; }
 
             data.trim();
-
-            // only accept callbacks from configured chat id
             if(config.telegramChatId.length() > 0 && chatId != config.telegramChatId)
             {
                 lastUpdateId = updateId;
                 continue;
             }
 
-            // process callback data as commands (same as text handlers)
             if(data.startsWith("/nuke"))
             {
-                Serial.println("[Telegram] Callback /nuke received - starting irrigation");
                 IrrigationManager::requestStart();
                 EventLog::add("Remote: Start requested via Telegram");
                 Telegram::send("▶️ ZanzNuke", "Irrigation start requested");
             }
             else if(data.startsWith("/stop"))
             {
-                Serial.println("[Telegram] Callback /stop received - stopping irrigation");
                 IrrigationManager::requestStop();
                 EventLog::add("Remote: Stop requested via Telegram");
                 Telegram::send("⏹️ ZanzNuke", "Stop requested");
             }
             else if(data.startsWith("/status"))
             {
-                Serial.println("[Telegram] Callback /status received - sending status");
                 IrrigationState state = IrrigationManager::state();
                 ErrorCode errCode = SafetyManager::error();
-
                 String s;
                 s += "State: ";
                 s += stateToString(state, IrrigationManager::isWashCycle());
@@ -608,19 +682,16 @@ void Telegram::update()
                 s += "\n";
                 s += "Next: ";
                 s += Scheduler::nextRunDescription();
-
                 Telegram::send("ℹ️ ZanzNuke Status", s);
             }
             else if(data.startsWith("/clear"))
             {
-                Serial.println("[Telegram] Callback /clear received - clearing faults");
                 SafetyManager::requestClear();
                 EventLog::add("Remote: Clear requested via Telegram");
                 Telegram::send("✅ ZanzNuke", "Clear requested");
             }
             else if(data.startsWith("/schedule"))
             {
-                Serial.println("[Telegram] Callback /schedule received - sending schedule");
                 String out;
                 const char* weekdays[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
                 bool any = false;
@@ -637,7 +708,6 @@ void Telegram::update()
                 Telegram::send("📅 ZanzNuke Schedule", out);
             }
 
-            // Answer the callback to remove client loading indicators
             if(cq["id"].is<const char*>())
             {
                 String cbQId = String(cq["id"].as<const char*>());
@@ -649,12 +719,7 @@ void Telegram::update()
                 h2.addHeader("Content-Type", "application/x-www-form-urlencoded");
                 String abody = "callback_query_id=" + urlEncode(cbQId) + "&text=" + urlEncode("OK") + "&show_alert=false";
                 int acode = h2.POST(abody);
-                String aresp = h2.getString();
-                if(acode <= 0 || (acode != 200 && acode != 201)) {
-                    Serial.print("[Telegram] answerCallbackQuery failed: "); Serial.print(acode);
-                    if(aresp.length() > 0) { Serial.print(" "); Serial.println(aresp); }
-                    else Serial.println();
-                }
+                h2.getString();
                 h2.end();
             }
 
@@ -662,7 +727,6 @@ void Telegram::update()
             continue;
         }
 
-        // message may be in v["message"] or v["edited_message"]; prefer message
         JsonVariant msg = v["message"].isNull() ? v["edited_message"] : v["message"];
         if(msg.isNull())
         {
@@ -671,21 +735,14 @@ void Telegram::update()
         }
 
         String chatId = String(msg["chat"]["id"].as<long long>());
-
-        // drop messages older than 60s to avoid replay/spam when offline
-        time_t now = time(nullptr);
+        time_t nowTs = time(nullptr);
         long msgDate = 0;
         if(msg["date"].is<long long>()) msgDate = msg["date"].as<long long>();
-        if(msgDate > 0 && (now - msgDate) > 60) { lastUpdateId = updateId; continue; }
+        if(msgDate > 0 && (nowTs - msgDate) > 60) { lastUpdateId = updateId; continue; }
 
         String text = msg["text"].as<const char*>();
-
-        // If a user sends /start, send the keyboard to that chat but do NOT change the configured chat id
         if(text.startsWith("/start"))
         {
-            Serial.println(" [Telegram] Text: /start");
-
-            // send the persistent reply keyboard to the requesting chat without adopting it
             const String kb = R"KB({
     "keyboard": [
         [{"text":"/status 📊"},{"text":"/schedule 📅"}],
@@ -700,16 +757,13 @@ void Telegram::update()
             continue;
         }
 
-        // /chatid: anyone can request their chat id
         if(text.startsWith("/chatid"))
         {
-            Serial.println("[Telegram] Command /chatid received - replying with chat id");
             Telegram::sendTo(chatId, "ZanzNuke ChatID", chatId);
             lastUpdateId = updateId;
             continue;
         }
 
-        // only accept commands from configured chat id
         if(config.telegramChatId.length() > 0 && chatId != config.telegramChatId)
         {
             lastUpdateId = updateId;
@@ -723,11 +777,8 @@ void Telegram::update()
 
         text.trim();
 
-        // minimal: command-specific logs below
-
         if(text.startsWith("/menu"))
         {
-            Serial.println("[Telegram] Command /menu received - sending keyboard");
             const String kb = R"KB({
     "keyboard": [
         [{"text":"/status 📊"},{"text":"/schedule 📅"}],
@@ -742,26 +793,22 @@ void Telegram::update()
             continue;
         }
 
-            if(text.startsWith("/nuke"))
-            {
-                Serial.println("[Telegram] Command /nuke received - starting irrigation");
-                IrrigationManager::requestStart();
-                EventLog::add("Remote: Start requested via Telegram");
-                Telegram::send("▶️ ZanzNuke", "Irrigation start requested");
-            }
+        if(text.startsWith("/nuke"))
+        {
+            IrrigationManager::requestStart();
+            EventLog::add("Remote: Start requested via Telegram");
+            Telegram::send("▶️ ZanzNuke", "Irrigation start requested");
+        }
         else if(text.startsWith("/stop"))
         {
-                Serial.println("[Telegram] Command /stop received - stopping irrigation");
-                IrrigationManager::requestStop();
-                EventLog::add("Remote: Stop requested via Telegram");
-                Telegram::send("⏹️ ZanzNuke", "Stop requested");
+            IrrigationManager::requestStop();
+            EventLog::add("Remote: Stop requested via Telegram");
+            Telegram::send("⏹️ ZanzNuke", "Stop requested");
         }
         else if(text.startsWith("/status"))
         {
-            // build status text similar to /api/status
             IrrigationState state = IrrigationManager::state();
             ErrorCode errCode = SafetyManager::error();
-
             String s;
             s += "State: ";
             s += stateToString(state, IrrigationManager::isWashCycle());
@@ -789,36 +836,39 @@ void Telegram::update()
             s += "\n";
             s += "Next: ";
             s += Scheduler::nextRunDescription();
-
             Telegram::send("ℹ️ ZanzNuke Status", s);
         }
-            else if(text.startsWith("/clear"))
+        else if(text.startsWith("/clear"))
+        {
+            SafetyManager::requestClear();
+            EventLog::add("Remote: Clear requested via Telegram");
+            Telegram::send("✅ ZanzNuke", "Clear requested");
+        }
+        else if(text.startsWith("/schedule"))
+        {
+            String out;
+            const char* weekdays[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
+            bool any = false;
+            for(int i=0;i<MAX_SCHEDULES;i++)
             {
-                Serial.println("[Telegram] Command /clear received - clearing faults");
-                SafetyManager::requestClear();
-                EventLog::add("Remote: Clear requested via Telegram");
-                Telegram::send("✅ ZanzNuke", "Clear requested");
+                ScheduleEntry e = Scheduler::getEntry(i);
+                if(!e.enabled) continue;
+                any = true;
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%s %02u:%02u\n", weekdays[e.weekday], e.hour, e.minute);
+                out += buf;
             }
-            else if(text.startsWith("/schedule"))
-            {
-                Serial.println("[Telegram] Command /schedule received - sending schedule");
-                String out;
-                const char* weekdays[] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-                bool any = false;
-                for(int i=0;i<MAX_SCHEDULES;i++)
-                {
-                    ScheduleEntry e = Scheduler::getEntry(i);
-                    if(!e.enabled) continue;
-                    any = true;
-                    char buf[64];
-                    snprintf(buf, sizeof(buf), "%s %02u:%02u\n", weekdays[e.weekday], e.hour, e.minute);
-                    out += buf;
-                }
-                if(!any) out = "No scheduled runs";
-                Telegram::send("📅 ZanzNuke Schedule", out);
-            }
+            if(!any) out = "No scheduled runs";
+            Telegram::send("📅 ZanzNuke Schedule", out);
+        }
 
         lastUpdateId = updateId;
     }
+}
 
+void Telegram::update()
+{
+    // All network I/O is handled asynchronously by the background
+    // worker task, so the main loop stays responsive while irrigation
+    // and safety logic runs without delays.
 }
