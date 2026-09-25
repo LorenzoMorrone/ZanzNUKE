@@ -92,11 +92,11 @@ static bool t_sendNow(const String &title, const String &message)
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(5000);
+    client.setTimeout(1500);
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(5000);
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     String url = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
 
@@ -135,19 +135,16 @@ static bool t_sendNow(const String &title, const String &message)
     http.end();
 
     if(result <= 0 || (result != 200 && result != 201)) {
-        // extra diagnostics and one retry
+        // Avoid blocking the main loop with long retry sleeps while
+        // a fill/test cycle is already running. The message is still
+        // queued for the next successful attempt instead of stalling
+        // irrigation logic here.
         Serial.print("[Telegram] POST failed, WiFi status: "); Serial.println(WiFi.status());
         Serial.print("[Telegram] Local IP: "); Serial.println(WiFi.localIP().toString());
-        Serial.println("[Telegram] Retrying POST in 500ms...");
-        delay(500);
-        result = http.POST(body);
-        resp = http.getString();
-        if(result <= 0 || (result != 200 && result != 201)) {
-            Serial.print("[Telegram] send failed: "); Serial.print(result);
-            if(resp.length() > 0) {
-                Serial.print(" "); Serial.println(resp);
-            } else Serial.println();
-        }
+        Serial.print("[Telegram] send failed: "); Serial.print(result);
+        if(resp.length() > 0) {
+            Serial.print(" "); Serial.println(resp);
+        } else Serial.println();
     }
 
     return result == 200 || result == 201;
@@ -182,11 +179,11 @@ bool Telegram::sendKeyboard(const String &keyboardJson)
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(5000);
+    client.setTimeout(1500);
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(5000);
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     // Minify keyboard JSON
     String kb = keyboardJson;
@@ -275,18 +272,8 @@ bool Telegram::sendKeyboard(const String &keyboardJson)
         if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
         else Serial.println();
 
-        // extra diagnostics and one retry
         Serial.print("[Telegram] POST failed, WiFi status: "); Serial.println(WiFi.status());
         Serial.print("[Telegram] Local IP: "); Serial.println(WiFi.localIP().toString());
-        Serial.println("[Telegram] Retrying POST in 500ms...");
-        delay(500);
-        result = http.POST(body);
-        resp = http.getString();
-        if(result <= 0 || (result != 200 && result != 201)) {
-            Serial.print("[Telegram] sendKeyboard retry failed: "); Serial.print(result);
-            if(resp.length() > 0) { Serial.print(" "); Serial.println(resp); }
-            else Serial.println();
-        }
     }
 
     // try parsing message_id even for fallback send
@@ -320,11 +307,11 @@ bool Telegram::sendKeyboardTo(const String &chatId, const String &keyboardJson)
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(5000);
+    client.setTimeout(1500);
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(5000);
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     // Minify keyboard JSON
     String kb = keyboardJson;
@@ -415,11 +402,11 @@ bool Telegram::sendTo(const String &chatId, String title, String message)
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(5000);
+    client.setTimeout(1500);
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(5000);
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     String url = "https://api.telegram.org/bot" + config.telegramBotToken + "/sendMessage";
     http.begin(client, url);
@@ -500,7 +487,7 @@ void Telegram::update()
     static uint32_t lastPollMs = 0;
 
     uint32_t now = millis();
-    if(now - lastPollMs < 2000) return; // poll at most every 2s
+    if(now - lastPollMs < 5000) return; // poll at most every 5s to keep main loop responsive
     lastPollMs = now;
 
     if(!NetworkManager::connected()) return;
@@ -509,11 +496,11 @@ void Telegram::update()
 
     WiFiClientSecure client;
     client.setInsecure();
-    client.setTimeout(5000);
+    client.setTimeout(1500);
 
     HTTPClient http;
-    http.setConnectTimeout(3000);
-    http.setTimeout(5000);
+    http.setConnectTimeout(1500);
+    http.setTimeout(1500);
 
     String url = "https://api.telegram.org/bot" + config.telegramBotToken + "/getUpdates?offset=" + String(lastUpdateId + 1);
 
