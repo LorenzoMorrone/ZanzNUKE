@@ -83,6 +83,9 @@ struct IrrigationConfig
      */
     bool networklessMode = false;
 
+    // Send a notification with the IP address after connecting to WiFi
+    bool notifyNewIp = true;
+
 
     /*
      * Advanced: system watchdog (main.cpp). Only takes effect

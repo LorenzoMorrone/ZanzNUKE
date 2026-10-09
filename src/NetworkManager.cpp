@@ -232,10 +232,13 @@ bool NetworkManager::connectSaved()
             Serial.println(
                 WiFi.localIP().toString()
             );
-            Notification::send(
-                "ZanzNuke - New IP address",
-                WiFi.localIP().toString()
-            );
+            if(config.notifyNewIp)
+            {
+                Notification::send(
+                    "ZanzNuke - New IP address",
+                    WiFi.localIP().toString()
+                );
+            }
             return true;
 
         }

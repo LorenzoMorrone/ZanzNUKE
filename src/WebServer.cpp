@@ -637,6 +637,13 @@ static void handleConfigPage(AsyncWebServerRequest *request)
             "actively try to recover a lost connection and fall back to its setup "
             "hotspot when it can't, using the timers below.</p>";
 
+    html += "<div class='row'><input type='checkbox' id='notifyip' name='notifyip'";
+    if(config.notifyNewIp) html += " checked";
+    html += "><label for='notifyip' style='margin:0'>Send \"New IP address\" notification</label></div>";
+
+    html += "<p class='hint'>Sends a notification with the device's IP address each time "
+            "it connects to WiFi (at boot). Turn off to stop these messages.</p>";
+
     html += "<label>WiFi reconnect retry interval (seconds)</label>";
     html += "<input name='wifi_reconnect' type='number' inputmode='numeric' step='1' min='5' value='";
     html += String(config.wifiReconnectIntervalSeconds);
@@ -752,6 +759,9 @@ static void handleConfigSave(AsyncWebServerRequest *request)
      */
     config.networklessMode =
         request->hasParam("netless");
+
+    config.notifyNewIp =
+        request->hasParam("notifyip");
 
     if(request->hasParam("wdt_timeout"))
         config.watchdogTimeoutSeconds =

@@ -111,6 +111,13 @@ bool IrrigationConfig::load()
         );
 
 
+    notifyNewIp =
+        preferences.getBool(
+            "notifyip",
+            true
+        );
+
+
     watchdogTimeoutSeconds =
         preferences.getUInt(
             "wdttimeout",
@@ -353,6 +360,12 @@ bool IrrigationConfig::save()
     preferences.putBool(
         "netless",
         networklessMode
+    );
+
+
+    preferences.putBool(
+        "notifyip",
+        notifyNewIp
     );
 
 
