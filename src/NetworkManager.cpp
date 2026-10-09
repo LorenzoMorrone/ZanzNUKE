@@ -636,8 +636,8 @@ void NetworkManager::update()
 
     }
 
-    // Poll Telegram bot for commands when connected
-    Telegram::update();
+    // Telegram polling runs on the Notification worker task: it is
+    // blocking network I/O and must never run on the control loop.
 
 }
 

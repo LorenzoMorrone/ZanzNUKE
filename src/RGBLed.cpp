@@ -51,6 +51,17 @@ void RGBLed::writeColor(
 )
 {
 
+    // Only push to the LED when the color actually changes; show()
+    // was being called on every loop() iteration.
+    static uint32_t lastColor = 0xFFFFFFFF;
+
+    uint32_t color = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+
+    if(color == lastColor)
+        return;
+
+    lastColor = color;
+
     leds[0] =
         CRGB(
             r,
