@@ -5,6 +5,7 @@
 #include "FlowMeter.h"
 #include "Config.h"
 #include "SafetyManager.h"
+#include "Notification.h"
 
 
 static const char* stateName(IrrigationState state)
@@ -501,6 +502,17 @@ void IrrigationManager::processState()
         Serial.println(
             stateName(IrrigationState::IDLE)
         );
+
+        // If the cycle finished with no error, notify the user
+        if(currentError == ErrorCode::NONE)
+        {
+            String title = washCycle ? String("✅ ZanzNuke Wash Complete") : String("✅ ZanzNuke Run Complete");
+            String body;
+            body += "Target: ";
+            body += String(targetLiters, 2);
+            body += " L";
+            Notification::send(title, body);
+        }
 
         changeState(
             IrrigationState::IDLE

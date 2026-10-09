@@ -18,7 +18,7 @@
 #include "ErrorStrings.h"
 #include "WebStyle.h"
 #include "EventLog.h"
-#include "Pushover.h"
+#include "Notification.h"
 
 
 AsyncWebServer server(80);
@@ -438,6 +438,26 @@ static void handleApiClear(AsyncWebServerRequest *request)
 
 
 
+static void handleApiWifiSetup(AsyncWebServerRequest *request)
+{
+
+    /*
+     * Unlike the other /api/* handlers, this doesn't queue a flag
+     * for the main loop to act on - NetworkManager::forceSetupMode()
+     * reboots on the spot, same as the setup server's own /save
+     * handler does from this same async task. Send the response
+     * first so the browser gets a reply before the connection
+     * drops out from under it.
+     */
+
+    request->send(200, "text/plain", "Restarting into WiFi setup mode...");
+
+    NetworkManager::forceSetupMode();
+
+}
+
+
+
 /*
  * ---------------------------------------------------------
  * Configuration page
@@ -517,16 +537,42 @@ static void handleConfigPage(AsyncWebServerRequest *request)
             "If it can't reach the new network, it falls back to broadcasting "
             "<b>ZanzNuke-Setup</b> again.</p>";
 
-    html += "</div><div class='card'><h3>Pushover notifications</h3>";
+    html += "<button type='button' class='btn-secondary' onclick=\""
+            "if(confirm('Restart now and broadcast ZanzNuke-Setup for reconfiguration? "
+            "This drops the current connection immediately.')) "
+            "fetch('/api/wifi-setup').catch(()=>{});\">Enter WiFi Setup Mode Now</button>";
 
-    html += "<label>App token</label>";
+    html += "<p class='hint'>Jumps straight to <b>ZanzNuke-Setup</b> without waiting for "
+            "a connection to fail first - the saved network above is left untouched, so "
+            "if you back out without saving new details, it goes right back to trying it "
+            "on the next restart. Same thing a 5-second hold of the physical fault-reset "
+            "button does, for when this page isn't reachable to begin with (e.g. "
+            "Networkless mode is quietly retrying a network that's no longer around).</p>";
+
+    html += "</div><div class='card'><h3>Notifications</h3>";
+
+    html += "<div class='row'><input type='checkbox' id='use_telegram' name='use_telegram'";
+    if(config.telegramEnabled) html += " checked";
+    html += "><label for='use_telegram' style='margin:0'>Use Telegram bot instead of Pushover</label></div>";
+
+    html += "<label>Pushover App token</label>";
     html += "<input name='pushover_token' type='text' value='";
     html += config.pushoverToken;
     html += "'>";
 
-    html += "<label>User key</label>";
+    html += "<label>Pushover User key</label>";
     html += "<input name='pushover_user' type='text' value='";
     html += config.pushoverUser;
+    html += "'>";
+
+    html += "<label>Telegram bot token</label>";
+    html += "<input name='telegram_token' type='text' value='";
+    html += config.telegramBotToken;
+    html += "'>";
+
+    html += "<label>Telegram chat id</label>";
+    html += "<input name='telegram_chat_id' type='text' value='";
+    html += config.telegramChatId;
     html += "'>";
 
     html += "</div>";
@@ -572,6 +618,25 @@ static void handleConfigPage(AsyncWebServerRequest *request)
 
     html += "<div class='card'><h3>Network</h3>";
 
+    html += "<div class='row'><input type='checkbox' id='netless' name='netless'";
+    if(config.networklessMode) html += " checked";
+    html += "><label for='netless' style='margin:0'>Networkless mode</label></div>";
+
+    html += "<p class='hint'>Turn this on if WiFi here is only occasional - a phone "
+            "hotspot switched on now and then, a weak signal, a router that's not always "
+            "on. With it enabled, a missing or dropped connection is treated as normal "
+            "rather than a fault: the device never reboots itself over it and never falls "
+            "back to broadcasting its own ZanzNuke-Setup hotspot just because the saved "
+            "network wasn't reachable - it simply keeps quietly retrying in the "
+            "background, for as long as it takes. Dosing, filling, spraying, every "
+            "safety check, and the weekly schedule all keep running exactly as normal "
+            "the entire time, since none of them ever depended on WiFi in the first "
+            "place - only the web dashboard and push notifications are unavailable "
+            "until it reconnects, and notifications sent while offline are queued and "
+            "delivered as soon as it does. Leave this off if you'd rather the device "
+            "actively try to recover a lost connection and fall back to its setup "
+            "hotspot when it can't, using the timers below.</p>";
+
     html += "<label>WiFi reconnect retry interval (seconds)</label>";
     html += "<input name='wifi_reconnect' type='number' inputmode='numeric' step='1' min='5' value='";
     html += String(config.wifiReconnectIntervalSeconds);
@@ -582,11 +647,9 @@ static void handleConfigPage(AsyncWebServerRequest *request)
     html += String(config.wifiGiveUpRestartMinutes);
     html += "'>";
 
-    html += "<p class='hint'>0 = never auto-reboot - keep retrying in the background "
-            "indefinitely instead. Irrigation, safety and the schedule all keep working "
-            "normally while disconnected either way; rebooting only matters for eventually "
-            "falling back to the ZanzNuke-Setup access point if the saved network is gone "
-            "for good. Leave this at 0 if you'd rather it never do that on its own.</p>";
+    html += "<p class='hint'>Ignored while Networkless mode is on. Otherwise, 0 = never "
+            "auto-reboot on its own either (same idea as Networkless mode, just without "
+            "the rest of what that also changes at boot - see above).</p>";
 
     html += "</div>";
 
@@ -682,6 +745,14 @@ static void handleConfigSave(AsyncWebServerRequest *request)
         config.wifiGiveUpRestartMinutes =
             (uint32_t)clampf(request->getParam("wifi_giveup")->value().toFloat(), 0.0f, 60.0f);
 
+    /*
+     * Checkbox: absent from the submission entirely means
+     * unchecked, same pattern as the schedule page's per-entry
+     * "enabled" checkboxes (see handleScheduleSave()).
+     */
+    config.networklessMode =
+        request->hasParam("netless");
+
     if(request->hasParam("wdt_timeout"))
         config.watchdogTimeoutSeconds =
             (uint32_t)clampf(request->getParam("wdt_timeout")->value().toFloat(), 5.0f, 120.0f);
@@ -692,6 +763,14 @@ static void handleConfigSave(AsyncWebServerRequest *request)
 
     if(request->hasParam("pushover_user"))
         config.pushoverUser = request->getParam("pushover_user")->value();
+
+    config.telegramEnabled = request->hasParam("use_telegram");
+
+    if(request->hasParam("telegram_token"))
+        config.telegramBotToken = request->getParam("telegram_token")->value();
+
+    if(request->hasParam("telegram_chat_id"))
+        config.telegramChatId = request->getParam("telegram_chat_id")->value();
 
 
     /*
@@ -1037,7 +1116,7 @@ static void handleDiagnostics(AsyncWebServerRequest *request)
     html += NetworkManager::ip();
     html += "</span></div>";
 
-    uint8_t pendingNotifications = Pushover::pendingCount();
+    uint8_t pendingNotifications = Notification::pendingCount();
 
     html += "<div style='grid-column:1/-1'><span class='stat-label'>Pending notifications</span><span class='stat-value ";
     html += (pendingNotifications > 0 ? "err" : "ok");
@@ -1356,6 +1435,7 @@ void WebServerManager::setupRoutes()
     server.on(M::exact("/api/wash"), HTTP_GET, handleApiWash);
     server.on(M::exact("/api/stop"), HTTP_GET, handleApiStop);
     server.on(M::exact("/api/clear"), HTTP_GET, handleApiClear);
+    server.on(M::exact("/api/wifi-setup"), HTTP_GET, handleApiWifiSetup);
 
     server.on(M::exact("/config"), HTTP_GET, handleConfigPage);
     server.on(M::exact("/config/save"), HTTP_GET, handleConfigSave);

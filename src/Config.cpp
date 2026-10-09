@@ -104,6 +104,13 @@ bool IrrigationConfig::load()
         );
 
 
+    networklessMode =
+        preferences.getBool(
+            "netless",
+            false
+        );
+
+
     watchdogTimeoutSeconds =
         preferences.getUInt(
             "wdttimeout",
@@ -135,6 +142,27 @@ bool IrrigationConfig::load()
     pushoverUser =
         preferences.getString(
             "puser",
+            ""
+        );
+
+
+    telegramEnabled =
+        preferences.getBool(
+            "telen",
+            false
+        );
+
+
+    telegramBotToken =
+        preferences.getString(
+            "ttoken",
+            ""
+        );
+
+
+    telegramChatId =
+        preferences.getString(
+            "tchat",
             ""
         );
 
@@ -322,6 +350,12 @@ bool IrrigationConfig::save()
     );
 
 
+    preferences.putBool(
+        "netless",
+        networklessMode
+    );
+
+
     preferences.putUInt(
         "wdttimeout",
         watchdogTimeoutSeconds
@@ -349,6 +383,24 @@ bool IrrigationConfig::save()
     preferences.putString(
         "puser",
         pushoverUser
+    );
+
+
+    preferences.putBool(
+        "telen",
+        telegramEnabled
+    );
+
+
+    preferences.putString(
+        "ttoken",
+        telegramBotToken
+    );
+
+
+    preferences.putString(
+        "tchat",
+        telegramChatId
     );
 
 

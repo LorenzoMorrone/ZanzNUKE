@@ -6,6 +6,7 @@
 
 
 #include "Config.h"
+#include "Clock.h"
 
 
 
@@ -161,6 +162,26 @@ bool Pushover::send(
 
 
     /*
+     * Stamp with when this actually happened, not when it
+     * eventually gets sent - queued notifications can sit for a
+     * while and then all go out together the moment WiFi comes
+     * back, which would otherwise arrive as an unreadable wall of
+     * same-instant messages with no way to tell what happened
+     * when. Captured once here, before flushPending()/enqueue(),
+     * so it survives in the queue rather than being computed at
+     * delivery time.
+     */
+
+    String timestampedMessage =
+        Clock::datetime()
+        +
+        " - "
+        +
+        message;
+
+
+
+    /*
      * Try to clear out anything already backed up first, so
      * notifications stay in order rather than a brand new one
      * jumping ahead of older queued ones.
@@ -177,7 +198,7 @@ bool Pushover::send(
     )
     {
 
-        enqueue(title, message);
+        enqueue(title, timestampedMessage);
 
         return false;
 
@@ -186,11 +207,11 @@ bool Pushover::send(
 
 
     bool ok =
-        sendNow(title, message);
+        sendNow(title, timestampedMessage);
 
 
     if(!ok)
-        enqueue(title, message);
+        enqueue(title, timestampedMessage);
 
 
     return ok;
